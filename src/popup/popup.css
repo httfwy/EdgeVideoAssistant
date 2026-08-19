@@ -1,0 +1,20 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+.popup-root {
+  box-sizing: border-box;
+  width: 360px;
+  min-height: 80px;
+  padding: 16px;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: #202124;
+}
+
+.popup-root h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
