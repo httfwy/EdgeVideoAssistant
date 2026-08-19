@@ -11,6 +11,7 @@ body {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  position: relative;
   width: 360px;
   height: 520px;
   max-height: 560px;
@@ -148,6 +149,36 @@ body {
   background: var(--color-bg-muted);
 }
 
+.variant-list {
+  margin: 0 0 var(--space-1);
+  padding: 0;
+  list-style: none;
+}
+
+.variant-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--color-secondary);
+  font-size: var(--font-assist);
+}
+
+.popup-toast {
+  position: absolute;
+  right: 16px;
+  bottom: 56px;
+  left: 16px;
+  z-index: 2;
+  padding: 8px 12px;
+  border-radius: var(--radius-button);
+  background: #202124;
+  color: #fff;
+  font-size: var(--font-assist);
+  text-align: center;
+}
+
 .card-actions,
 .record-actions {
   display: flex;
@@ -168,6 +199,38 @@ body {
 
 .live-segment {
   margin-left: auto;
+}
+
+.record-timer {
+  margin: 0 0 var(--space-1);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.record-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-danger);
+}
+
+.record-dot.is-live {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.record-dot.is-paused {
+  background: #9aa0a6;
+  animation: none;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .speed-chips {
@@ -214,6 +277,14 @@ body {
   color: var(--color-primary);
   font-size: var(--font-body);
   cursor: pointer;
+}
+
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.btn-text:focus-visible,
+.chip:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .btn-primary:disabled,

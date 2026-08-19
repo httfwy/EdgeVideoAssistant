@@ -3,6 +3,7 @@ import { appendHistory, getDownloadTasks, getSettings } from '../../shared/stora
 import type { DownloadKind, DownloadTask, MediaKind } from '../../shared/types'
 import { isDirectKind, suggestDownloadFilename } from './filename'
 import { startOffscreenHls } from './offscreen'
+import { RECORD_FALLBACK } from './parseStream'
 import { createDownloadTask, findInProgressByUrl, getDownloadTask, patchDownloadTask, upsertDownloadTask } from './tasks'
 
 export interface DownloadStartInput {
@@ -11,6 +12,8 @@ export interface DownloadStartInput {
   taskId?: string
   kind?: MediaKind
   canDirectDownload?: boolean
+  mediaUrl?: string
+  quality?: string
 }
 
 export const DOWNLOAD_NOT_DIRECT = '未实现'
@@ -124,6 +127,7 @@ export async function startDirectDownload(input: DownloadStartInput): Promise<Do
 }
 
 export async function startHlsDownload(input: DownloadStartInput): Promise<DownloadTask> {
+  const playlistUrl = input.mediaUrl || input.url
   if (input.taskId) {
     const existing = await getDownloadTask(input.taskId)
     if (existing && (existing.status === 'paused' || existing.status === 'downloading')) {
@@ -140,7 +144,11 @@ export async function startHlsDownload(input: DownloadStartInput): Promise<Downl
     }
   }
 
-  const { task, filename } = await prepareTask(input, 'hls', 'hls')
+  const { task, filename } = await prepareTask(
+    { ...input, url: playlistUrl, name: input.quality ? `${input.name ?? ''} ${input.quality}`.trim() : input.name },
+    'hls',
+    'hls',
+  )
   if (task.status === 'downloading' || task.status === 'merging') {
     return task
   }
@@ -154,7 +162,7 @@ export async function startHlsDownload(input: DownloadStartInput): Promise<Downl
   try {
     await startOffscreenHls({
       taskId: task.id,
-      url: input.url,
+      url: playlistUrl,
       filename,
       startIndex: 0,
     })
@@ -185,7 +193,20 @@ export async function startDownload(input: DownloadStartInput): Promise<Download
   if (kind === 'hls') {
     return startHlsDownload(input)
   }
-  if (kind === 'dash' || (!isDirectKind(kind) && !input.canDirectDownload)) {
+  if (kind === 'dash') {
+    const target = input.mediaUrl
+    if (!target) {
+      throw new Error(RECORD_FALLBACK)
+    }
+    return startDirectDownload({
+      ...input,
+      url: target,
+      kind: 'mp4',
+      canDirectDownload: true,
+      name: input.quality ? `${input.name ?? ''} ${input.quality}`.trim() : input.name,
+    })
+  }
+  if (!isDirectKind(kind) && !input.canDirectDownload) {
     throw new Error(DOWNLOAD_NOT_DIRECT)
   }
   return startDirectDownload(input)

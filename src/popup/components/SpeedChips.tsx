@@ -2,6 +2,7 @@ import { PLAYBACK_RATES } from '../../shared/constants'
 
 interface SpeedChipsProps {
   value: number
+  disabled?: boolean
   onChange: (rate: number) => void
 }
 
@@ -9,8 +10,8 @@ function formatRate(rate: number): string {
   return `${rate}x`
 }
 
-/** 倍速芯片，仅本地选中态 */
-function SpeedChips({ value, onChange }: SpeedChipsProps) {
+/** 倍速芯片，当前项实心高亮 */
+function SpeedChips({ value, disabled, onChange }: SpeedChipsProps) {
   return (
     <section className="popup-section" aria-label="播放速度">
       <div className="section-title">
@@ -24,6 +25,7 @@ function SpeedChips({ value, onChange }: SpeedChipsProps) {
             role="listitem"
             className={rate === value ? 'chip chip-active' : 'chip'}
             aria-pressed={rate === value}
+            disabled={disabled}
             onClick={() => onChange(rate)}
           >
             {formatRate(rate)}

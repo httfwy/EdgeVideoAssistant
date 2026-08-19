@@ -8,7 +8,7 @@ import {
   type DownloadControlPayload,
   type MessageResponse,
 } from '../../shared/messages'
-import type { DownloadTask, HistoryEntry, Snapshot } from '../../shared/types'
+import type { DownloadTask, HistoryEntry, RecordTask, Snapshot } from '../../shared/types'
 
 type TabKey = 'download' | 'record' | 'history'
 
@@ -92,7 +92,8 @@ function TasksApp() {
       if (
         changes[STORAGE_KEYS.downloadTasks] ||
         changes[STORAGE_KEYS.recordTasks] ||
-        changes[STORAGE_KEYS.history]
+        changes[STORAGE_KEYS.history] ||
+        changes[STORAGE_KEYS.activeRecord]
       ) {
         void refresh()
       }
@@ -121,7 +122,21 @@ function TasksApp() {
     void control({ action, ...extra })
   }
 
+  async function recordAction(action: 'pause' | 'resume' | 'stop', taskId: string) {
+    setError('')
+    try {
+      const response = await sendMessage(MessageType.RECORD_CONTROL, { action, taskId })
+      const message = applyIfSnapshot(response, setSnapshot)
+      if (message) {
+        setError(message)
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '操作失败')
+    }
+  }
+
   const downloadTasks = snapshot?.downloadTasks ?? []
+  const recordTasks = snapshot?.recordTasks ?? []
   const history = useMemo(() => {
     const entries = snapshot?.history ?? []
     return [...entries].sort((a, b) => b.createdAt - a.createdAt)
@@ -172,11 +187,7 @@ function TasksApp() {
       {tab === 'download' ? (
         <DownloadTab tasks={downloadTasks} onAction={run} />
       ) : null}
-      {tab === 'record' ? (
-        <div className="page-empty">
-          <p>录制功能将在后续版本提供。</p>
-        </div>
-      ) : null}
+      {tab === 'record' ? <RecordTab tasks={recordTasks} onAction={(action, taskId) => void recordAction(action, taskId)} /> : null}
       {tab === 'history' ? <HistoryTab entries={history} onAction={run} /> : null}
     </main>
   )
@@ -265,6 +276,101 @@ function DownloadTab({
         </ul>
       )}
     </section>
+  )
+}
+
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const hh = String(Math.floor(total / 3600)).padStart(2, '0')
+  const mm = String(Math.floor((total % 3600) / 60)).padStart(2, '0')
+  const ss = String(total % 60).padStart(2, '0')
+  return `${hh}:${mm}:${ss}`
+}
+
+function recordStatusClass(status: RecordTask['status']): string {
+  if (status === 'recording') {
+    return 'is-running'
+  }
+  if (status === 'paused') {
+    return 'is-paused'
+  }
+  if (status === 'completed') {
+    return 'is-done'
+  }
+  return 'is-failed'
+}
+
+function RecordTab({
+  tasks,
+  onAction,
+}: {
+  tasks: RecordTask[]
+  onAction: (action: 'pause' | 'resume' | 'stop', taskId: string) => void
+}) {
+  if (tasks.length === 0) {
+    return (
+      <div className="page-empty">
+        <p>暂无录制任务。</p>
+      </div>
+    )
+  }
+
+  return (
+    <ul className="task-list">
+      {tasks.map((task) => (
+        <li key={task.id} className="task-card">
+          <div className="task-main">
+            <p className="task-name">{task.name}</p>
+            <p className="task-meta">
+              {task.mode === 'live' ? '直播' : task.mode === 'screen' ? '屏幕' : '标签页'} · {task.format.toUpperCase()}
+              {task.segmentIndex ? ` · part-${String(task.segmentIndex).padStart(2, '0')}` : ''}
+            </p>
+            <p className="task-meta">
+              时长 {formatDuration(task.durationMs)}
+              {task.estimatedSizeBytes
+                ? ` · 约 ${(task.estimatedSizeBytes / (1024 * 1024)).toFixed(1)} MB`
+                : ''}
+              {task.error ? ` · ${task.error}` : ''}
+            </p>
+          </div>
+          <div className="task-side">
+            <span className={`task-status ${recordStatusClass(task.status)}`}>
+              {task.status === 'recording'
+                ? '录制中'
+                : task.status === 'paused'
+                  ? '暂停'
+                  : task.status === 'completed'
+                    ? '完成'
+                    : task.status === 'idle'
+                      ? '空闲'
+                      : '失败'}
+            </span>
+            <div className="task-actions">
+              {task.status === 'recording' ? (
+                <>
+                  <button type="button" className="btn-secondary" onClick={() => onAction('pause', task.id)}>
+                    暂停
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => onAction('stop', task.id)}>
+                    停止并保存
+                  </button>
+                </>
+              ) : null}
+              {task.status === 'paused' ? (
+                <>
+                  <button type="button" className="btn-secondary" onClick={() => onAction('resume', task.id)}>
+                    继续
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => onAction('stop', task.id)}>
+                    停止并保存
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
   )
 }
 

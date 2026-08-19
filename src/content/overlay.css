@@ -1,0 +1,56 @@
+#eva-speed-overlay {
+  position: absolute;
+  z-index: 2147483646;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 200px;
+  padding: 8px 10px;
+  border: 1px solid #e8eaed;
+  border-radius: 8px;
+  background: #fff;
+  color: #202124;
+  font: 12px/1.4 'Segoe UI', system-ui, sans-serif;
+  box-shadow: 0 2px 8px rgb(32 33 36 / 16%);
+  cursor: move;
+  user-select: none;
+}
+
+#eva-speed-overlay select {
+  flex: 1;
+  height: 24px;
+  border: 1px solid #e8eaed;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+#eva-speed-overlay button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #5f6368;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+@media (prefers-color-scheme: dark) {
+  #eva-speed-overlay {
+    border-color: #3c4043;
+    background: #202124;
+    color: #e8eaed;
+  }
+
+  #eva-speed-overlay select {
+    border-color: #3c4043;
+    background: #202124;
+    color: #e8eaed;
+  }
+
+  #eva-speed-overlay button {
+    color: #9aa0a6;
+  }
+}

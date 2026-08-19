@@ -13,7 +13,7 @@
       "128": "icons/icon128.png"
     }
   },
-  "permissions": ["storage", "scripting", "tabs", "webRequest", "downloads", "notifications", "offscreen"],
+  "permissions": ["storage", "scripting", "tabs", "webRequest", "downloads", "notifications", "offscreen", "tabCapture"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "options_page": "src/pages/options/index.html",
   "background": {
@@ -24,7 +24,14 @@
     {
       "matches": ["http://*/*", "https://*/*"],
       "js": ["src/content/index.ts"],
+      "css": ["src/content/overlay.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["src/content/pageHook.ts"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
   "icons": {

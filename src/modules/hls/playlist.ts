@@ -12,6 +12,7 @@ export interface MediaPlaylist {
 export interface MasterVariant {
   bandwidth: number
   uri: string
+  resolution?: string
 }
 
 function resolveUri(uri: string, baseUrl: string): string {
@@ -71,6 +72,7 @@ export function parseMasterVariants(text: string, baseUrl: string): MasterVarian
     variants.push({
       bandwidth: Number(attrs.BANDWIDTH) || 0,
       uri: resolveUri(next, baseUrl),
+      resolution: attrs.RESOLUTION || undefined,
     })
   }
   return variants
@@ -78,6 +80,68 @@ export function parseMasterVariants(text: string, baseUrl: string): MasterVarian
 
 export function pickHighestVariant(variants: MasterVariant[]): MasterVariant | undefined {
   return [...variants].sort((a, b) => b.bandwidth - a.bandwidth)[0]
+}
+
+export function variantLabel(variant: MasterVariant): string {
+  const kbps = Math.round(variant.bandwidth / 1000)
+  if (variant.resolution) {
+    return `${variant.resolution} · ${kbps} kbps`
+  }
+  return `${kbps} kbps`
+}
+
+function isMasterPlaylist(text: string): boolean {
+  return isMaster(text)
+}
+
+export async function inspectHls(url: string): Promise<{
+  isLive: boolean
+  encrypted: boolean
+  variants: { id: string; label: string; url: string; bandwidth?: number; resolution?: string }[]
+}> {
+  const text = await fetchText(url, url)
+  if (isMasterPlaylist(text)) {
+    const master = parseMasterVariants(text, url)
+    if (!master.length) {
+      throw new Error('无法解析播放列表')
+    }
+    const peek = pickHighestVariant(master)
+    let isLive = false
+    let encrypted = false
+    if (peek) {
+      try {
+        const media = parseMediaPlaylist(await fetchText(peek.uri, url), peek.uri)
+        isLive = media.isLive
+        encrypted = media.encrypted
+      } catch {
+        isLive = false
+      }
+    }
+    return {
+      isLive,
+      encrypted,
+      variants: master.map((item, index) => ({
+        id: String(index),
+        label: variantLabel(item),
+        url: item.uri,
+        bandwidth: item.bandwidth,
+        resolution: item.resolution,
+      })),
+    }
+  }
+
+  const media = parseMediaPlaylist(text, url)
+  return {
+    isLive: media.isLive,
+    encrypted: media.encrypted,
+    variants: [
+      {
+        id: 'default',
+        label: '默认',
+        url,
+      },
+    ],
+  }
 }
 
 export async function fetchText(url: string, referrer?: string): Promise<string> {

@@ -10,3 +10,4 @@ export {
 export { controlDownload } from './control'
 export { downloadStatusLabel, formatDownloadProgress } from './format'
 export { applyHlsProgress } from './hlsProgress'
+export { parseStream } from './parseStream'

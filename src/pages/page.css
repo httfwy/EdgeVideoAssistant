@@ -185,6 +185,13 @@ body {
   cursor: default;
 }
 
+.page-tab:focus-visible,
+.btn-secondary:focus-visible,
+.btn-text:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 .options-root {
   padding-bottom: 80px;
 }

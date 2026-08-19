@@ -13,6 +13,9 @@ export interface MediaDraft {
   canDirectDownload: boolean
   unsupportedReason?: string
   sizeBytes?: number
+  quality?: string
+  isLive?: boolean
+  title?: string
 }
 
 /** 去掉 hash；非 http(s) 或 blob/data 返回 null */
@@ -54,6 +57,9 @@ export function classifyKind(url: string): MediaKind {
   }
   if (hasExtension(url, 'mpd')) {
     return 'dash'
+  }
+  if (hasExtension(url, 'm4s')) {
+    return 'mp4'
   }
   if (hasExtension(url, 'mp4')) {
     return 'mp4'
@@ -106,7 +112,15 @@ export function kindCapabilities(kind: MediaKind): Pick<MediaDraft, 'needsParse'
 
 export function draftFromUrl(
   raw: string,
-  options?: { contentType?: string; sizeBytes?: number; base?: string; drm?: boolean },
+  options?: {
+    contentType?: string
+    sizeBytes?: number
+    base?: string
+    drm?: boolean
+    quality?: string
+    isLive?: boolean
+    title?: string
+  },
 ): MediaDraft | null {
   const url = normalizeUrl(raw, options?.base)
   if (!url) {
@@ -132,6 +146,9 @@ export function draftFromUrl(
     canDirectDownload: drm ? false : caps.canDirectDownload,
     unsupportedReason: drm ? DRM_UNSUPPORTED_REASON : undefined,
     sizeBytes: options?.sizeBytes,
+    quality: options?.quality,
+    isLive: options?.isLive,
+    title: options?.title,
   }
 }
 

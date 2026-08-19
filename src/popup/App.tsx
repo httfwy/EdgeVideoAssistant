@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Footer from './components/Footer'
 import Header from './components/Header'
 import RecordSection from './components/RecordSection'
@@ -28,12 +28,22 @@ function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [detecting, setDetecting] = useState(false)
   const [pendingUrl, setPendingUrl] = useState('')
+  const [parsingId, setParsingId] = useState('')
   const [playbackRate, setPlaybackRate] = useState(1)
+  const [toast, setToast] = useState('')
+  const [recordError, setRecordError] = useState('')
+  const toastTimer = useRef(0)
 
   const applySnapshot = useCallback((response: MessageResponse) => {
     if (response?.ok && 'snapshot' in response) {
       setSnapshot(response.snapshot)
     }
+  }, [])
+
+  const showToast = useCallback((message: string) => {
+    window.clearTimeout(toastTimer.current)
+    setToast(message)
+    toastTimer.current = window.setTimeout(() => setToast(''), 2000)
   }, [])
 
   const refreshSnapshot = useCallback(async () => {
@@ -74,6 +84,14 @@ function App() {
           return
         }
         applySnapshot(response)
+        if (response.ok && 'snapshot' in response) {
+          const settings = response.snapshot.settings
+          setPlaybackRate(
+            settings.rememberPlaybackRate && settings.lastPlaybackRate
+              ? settings.lastPlaybackRate
+              : 1,
+          )
+        }
       })
       .finally(() => {
         if (!cancelled) {
@@ -94,7 +112,13 @@ function App() {
       if (area !== 'local') {
         return
       }
-      if (changes[STORAGE_KEYS.downloadTasks] || changes[STORAGE_KEYS.settings]) {
+      if (
+        changes[STORAGE_KEYS.downloadTasks] ||
+        changes[STORAGE_KEYS.settings] ||
+        changes[STORAGE_KEYS.recordTasks] ||
+        changes[STORAGE_KEYS.activeRecord] ||
+        changes[STORAGE_KEYS.history]
+      ) {
         void refreshSnapshot()
       }
     }
@@ -112,26 +136,100 @@ function App() {
     void runDetect()
   }
 
-  async function handleDownload(resource: VideoResource, taskId?: string) {
+  async function handleDownload(
+    resource: VideoResource,
+    options?: { taskId?: string; mediaUrl?: string; quality?: string },
+  ) {
     if (pendingUrl) {
       return
     }
-    setPendingUrl(resource.url)
+    setPendingUrl(options?.mediaUrl || resource.url)
     try {
       const response = await sendMessage(MessageType.DOWNLOAD_START, {
         url: resource.url,
         name: resource.title,
         resourceId: resource.id,
-        taskId,
+        taskId: options?.taskId,
         kind: resource.kind,
         canDirectDownload: resource.canDirectDownload,
+        mediaUrl: options?.mediaUrl,
+        quality: options?.quality,
       })
       if (!response?.ok) {
+        showToast(response && 'error' in response && response.error ? response.error : '下载失败')
         return
       }
       applySnapshot(response)
     } finally {
       setPendingUrl('')
+    }
+  }
+
+  async function handleParse(resource: VideoResource) {
+    setParsingId(resource.id)
+    try {
+      const tab = (await chrome.tabs.query({ active: true, currentWindow: true }))[0]
+      const response = await sendMessage(MessageType.PARSE_STREAM, {
+        url: resource.url,
+        kind: resource.kind,
+        resourceId: resource.id,
+        tabId: tab?.id,
+      })
+      if (!response?.ok) {
+        showToast(response && 'error' in response && response.error ? response.error : '解析失败')
+        return
+      }
+      applySnapshot(response)
+    } finally {
+      setParsingId('')
+    }
+  }
+
+  function handleGoRecord() {
+    document.getElementById('record-section')?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  async function handleRecord(
+    action: 'start' | 'pause' | 'resume' | 'stop',
+    mode?: 'tab' | 'screen' | 'live',
+    liveResource?: VideoResource,
+  ) {
+    setRecordError('')
+    const tab = (await chrome.tabs.query({ active: true, currentWindow: true }))[0]
+    const live =
+      liveResource ?? (snapshot?.detected ?? []).find((item) => item.isLive && item.kind === 'hls')
+    const resolvedMode = action === 'start' && mode === 'live' && !live ? 'tab' : mode
+    try {
+      const response = await sendMessage(MessageType.RECORD_CONTROL, {
+        action,
+        mode: resolvedMode,
+        tabId: tab?.id,
+        url: resolvedMode === 'live' ? live?.url : undefined,
+        name: resolvedMode === 'live' ? live?.title : undefined,
+      })
+      if (!response?.ok) {
+        setRecordError(response && 'error' in response && response.error ? response.error : '录制失败')
+        return
+      }
+      applySnapshot(response)
+    } catch (err: unknown) {
+      setRecordError(err instanceof Error ? err.message : '请允许标签页捕获后重试')
+    }
+  }
+
+  async function handleSpeed(rate: number) {
+    setPlaybackRate(rate)
+    try {
+      const response = await sendMessage(MessageType.SET_PLAYBACK_RATE, { rate })
+      if (!response?.ok) {
+        showToast(
+          response && 'error' in response && response.error
+            ? response.error
+            : '当前页没有可调速的视频',
+        )
+      }
+    } catch {
+      showToast('当前页没有可调速的视频')
     }
   }
 
@@ -142,6 +240,9 @@ function App() {
   const badgeCount = useMemo(() => (snapshot ? countInProgress(snapshot) : 0), [snapshot])
   const resources = snapshot?.detected ?? []
   const downloadTasks = snapshot?.downloadTasks ?? []
+  const activeRecord = snapshot?.activeRecord ?? null
+  const recordTask = snapshot?.recordTasks.find((item) => item.id === activeRecord?.taskId)
+  const liveAvailable = resources.some((item) => item.isLive && item.kind === 'hls')
   const listError = status === 'error' ? error : ''
   const isDetecting = detecting || status === 'loading'
 
@@ -155,12 +256,27 @@ function App() {
           detecting={isDetecting}
           error={listError}
           pendingUrl={pendingUrl}
+          parsingId={parsingId}
           onRetry={handleRefresh}
           onDownload={handleDownload}
+          onParse={handleParse}
+          onGoRecord={handleGoRecord}
+          onLive={(resource) => void handleRecord('start', 'live', resource)}
         />
-        <RecordSection />
-        <SpeedChips value={playbackRate} onChange={setPlaybackRate} />
+        <RecordSection
+          active={activeRecord}
+          task={recordTask}
+          liveAvailable={liveAvailable}
+          liveSegmentMinutes={snapshot?.settings.liveSegmentMinutes ?? 30}
+          error={recordError}
+          onStart={(mode) => void handleRecord('start', mode)}
+          onPause={() => void handleRecord('pause')}
+          onResume={() => void handleRecord('resume')}
+          onStop={() => void handleRecord('stop')}
+        />
+        <SpeedChips value={playbackRate} onChange={(rate) => void handleSpeed(rate)} />
       </div>
+      {toast ? <div className="popup-toast">{toast}</div> : null}
       <Footer
         badgeCount={badgeCount}
         onOpenTasks={() => openExtensionPage(TASKS_PAGE)}

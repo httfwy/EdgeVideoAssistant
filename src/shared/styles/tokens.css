@@ -18,3 +18,17 @@
   --font-body: 13px;
   --font-assist: 12px;
 }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-primary: #8ab4f8;
+    --color-success: #81c995;
+    --color-warning: #fdd663;
+    --color-danger: #f28b82;
+    --color-text: #e8eaed;
+    --color-secondary: #9aa0a6;
+    --color-border: #3c4043;
+    --color-bg: #202124;
+    --color-bg-muted: #2d2e31;
+  }
+}

@@ -18,8 +18,12 @@ export async function ensureOffscreenDocument(): Promise<void> {
   try {
     await chrome.offscreen.createDocument({
       url: OFFSCREEN_URL,
-      reasons: [chrome.offscreen.Reason.BLOBS],
-      justification: 'HLS 分片下载与合并',
+      reasons: [
+        chrome.offscreen.Reason.BLOBS,
+        chrome.offscreen.Reason.USER_MEDIA,
+        chrome.offscreen.Reason.DISPLAY_MEDIA,
+      ],
+      justification: 'HLS 分片合并与页面录制',
     })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error)

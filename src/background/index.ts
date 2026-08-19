@@ -7,6 +7,10 @@ import {
   type ErrorResponse,
   type ExtensionMessage,
   type MessageResponse,
+  type ParseStreamPayload,
+  type PlaybackRatePayload,
+  type RecordControlPayload,
+  type RecordStatePayload,
 } from '../shared/messages'
 import {
   ensureDefaultSettings,
@@ -24,11 +28,13 @@ import {
   DOWNLOAD_NOT_DIRECT,
   applyHlsProgress,
   controlDownload,
+  parseStream,
   registerDownloadListeners,
   startDownload,
   type DownloadStartInput,
 } from '../modules/downloader'
 import type { HlsProgressUpdate } from '../modules/hls'
+import { applyRecordState, controlRecord } from '../modules/recorder'
 
 const unimplemented: ErrorResponse = { ok: false, error: UNIMPLEMENTED_ERROR }
 const RESTRICTED_ERROR = '当前页无法检测，请在普通网页重试'
@@ -228,6 +234,65 @@ async function handleMessage(
       return handleDownloadStart(message.payload as DownloadStartInput | undefined)
     case MessageType.DOWNLOAD_CONTROL:
       return handleDownloadControl(message.payload as DownloadControlPayload | undefined)
+    case MessageType.PARSE_STREAM: {
+      const payload = message.payload as ParseStreamPayload | undefined
+      if (!payload?.url) {
+        return { ok: false, error: '链接无效' }
+      }
+      try {
+        await parseStream({
+          ...payload,
+          tabId: payload.tabId ?? sender.tab?.id ?? (await getActiveTab())?.id,
+        })
+      } catch (error: unknown) {
+        return { ok: false, error: error instanceof Error ? error.message : '解析失败' }
+      }
+      const snapshot = await getSnapshot(payload.tabId ?? (await getActiveTab())?.id)
+      return { ok: true, snapshot }
+    }
+    case MessageType.RECORD_CONTROL: {
+      const payload = message.payload as RecordControlPayload | undefined
+      if (!payload?.action) {
+        return { ok: false, error: '操作无效' }
+      }
+      try {
+        await controlRecord({
+          ...payload,
+          tabId: payload.tabId ?? sender.tab?.id ?? (await getActiveTab())?.id,
+        })
+      } catch (error: unknown) {
+        return { ok: false, error: error instanceof Error ? error.message : '录制失败' }
+      }
+      const snapshot = await getSnapshot((await getActiveTab())?.id)
+      return { ok: true, snapshot }
+    }
+    case MessageType.RECORD_STATE: {
+      await applyRecordState(message.payload as RecordStatePayload)
+      return { ok: true }
+    }
+    case MessageType.SET_PLAYBACK_RATE: {
+      const payload = (message.payload ?? {}) as PlaybackRatePayload
+      const tab = payload.tabId !== undefined ? await chrome.tabs.get(payload.tabId) : await getActiveTab()
+      if (!tab?.id) {
+        return { ok: false, error: '当前页没有可调速的视频' }
+      }
+      try {
+        const result = (await chrome.tabs.sendMessage(tab.id, {
+          type: MessageType.SET_PLAYBACK_RATE,
+          payload: { rate: payload.rate },
+        })) as MessageResponse
+        if (result && !result.ok) {
+          return result
+        }
+        const settings = await getSettings()
+        if (settings.rememberPlaybackRate) {
+          await patchSettings({ lastPlaybackRate: payload.rate })
+        }
+        return { ok: true }
+      } catch {
+        return { ok: false, error: '当前页没有可调速的视频' }
+      }
+    }
     case MessageType.HLS_PROGRESS: {
       await applyHlsProgress(message.payload as HlsProgressUpdate)
       return { ok: true }
@@ -235,6 +300,8 @@ async function handleMessage(
     case MessageType.HLS_START:
     case MessageType.HLS_PAUSE:
     case MessageType.HLS_ABORT:
+    case MessageType.HLS_LIVE_START:
+    case MessageType.PAGE_MEDIA:
       return { ok: true }
     default:
       return unimplemented

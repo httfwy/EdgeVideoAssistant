@@ -22,6 +22,26 @@ export type RecordStatus = 'idle' | 'recording' | 'paused' | 'completed' | 'fail
 /** 录制输出格式 */
 export type RecordFormat = 'webm' | 'mp4'
 
+/** HLS 清晰度档 */
+export interface StreamVariant {
+  id: string
+  label: string
+  url: string
+  bandwidth?: number
+  resolution?: string
+}
+
+/** DASH / 分离流轨道 */
+export interface StreamTrack {
+  id: string
+  kind: 'video' | 'audio'
+  label: string
+  url?: string
+  bandwidth?: number
+  mime?: string
+  downloadable: boolean
+}
+
 /** 当前页检测到的视频资源 */
 export interface VideoResource {
   id: string
@@ -38,6 +58,9 @@ export interface VideoResource {
   canDirectDownload: boolean
   /** DRM / 加密等无法直链保存时的说明，不含破解相关措辞 */
   unsupportedReason?: string
+  variants?: StreamVariant[]
+  tracks?: StreamTrack[]
+  parsed?: boolean
   detectedAt: number
 }
 

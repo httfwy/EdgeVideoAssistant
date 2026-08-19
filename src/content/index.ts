@@ -1,5 +1,7 @@
+import { draftsFromPlayurlJson } from '../modules/detector/bilibili'
 import { MessageType, type DetectScanPayload, type ExtensionMessage } from '../shared/messages'
 import { scanDom } from '../modules/detector'
+import { applyPlaybackRate, setupOverlay } from '../modules/playback'
 
 const OBSERVE_DEBOUNCE_MS = 300
 
@@ -11,8 +13,7 @@ function collect(): DetectScanPayload {
   }
 }
 
-function reportToBackground() {
-  const payload = collect()
+function reportToBackground(payload: DetectScanPayload = collect()) {
   void chrome.runtime.sendMessage(
     {
       type: MessageType.DETECT_RESULT,
@@ -34,10 +35,35 @@ function scheduleReport() {
 }
 
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
-  if (message?.type !== MessageType.DETECT_REFRESH) {
+  if (message?.type === MessageType.DETECT_REFRESH) {
+    sendResponse({ ok: true, ...collect() })
     return
   }
-  sendResponse({ ok: true, ...collect() })
+  if (message?.type === MessageType.SET_PLAYBACK_RATE) {
+    const rate = Number((message.payload as { rate?: number } | undefined)?.rate)
+    const result = applyPlaybackRate(Number.isFinite(rate) ? rate : 1)
+    sendResponse(result)
+    return true
+  }
+})
+
+window.addEventListener('message', (event: MessageEvent) => {
+  if (event.source !== window) {
+    return
+  }
+  const data = event.data as { source?: string; data?: unknown } | undefined
+  if (data?.source !== 'eva-page-media') {
+    return
+  }
+  const items = draftsFromPlayurlJson(data.data, location.href)
+  if (!items.length) {
+    return
+  }
+  reportToBackground({
+    items,
+    pageTitle: document.title,
+    pageUrl: location.href,
+  })
 })
 
 const observer = new MutationObserver(() => {
@@ -60,3 +86,4 @@ document.addEventListener(
 )
 
 reportToBackground()
+void setupOverlay()

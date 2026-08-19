@@ -160,8 +160,8 @@ function OptionsApp() {
         <h2 className="option-title">关于</h2>
         <p className="option-about">版本 {version}</p>
         <p className="option-about">
-          本扩展使用存储、标签页、网络检测、下载、通知与 Offscreen
-          权限，用于识别当前页视频、保存文件和显示完成提示。不申请调试器权限。
+          本扩展使用存储、标签页、网络检测、下载、通知、Offscreen 与标签页捕获
+          权限，用于识别当前页视频、保存文件、录制与显示完成提示。不申请调试器权限。
         </p>
         <p className="option-about">视频处理均在本地完成，不会上传内容。</p>
       </section>

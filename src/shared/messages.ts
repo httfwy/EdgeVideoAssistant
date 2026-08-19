@@ -1,5 +1,5 @@
 import type { MediaDraft } from '../modules/detector/classify'
-import type { MediaKind, Settings, Snapshot } from './types'
+import type { MediaKind, RecordMode, Settings, Snapshot } from './types'
 
 /** Content Script / 刷新扫描上报 */
 export interface DetectScanPayload {
@@ -16,6 +16,42 @@ export interface DownloadStartPayload {
   taskId?: string
   kind?: MediaKind
   canDirectDownload?: boolean
+  /** 选定的 media playlist 或轨道地址 */
+  mediaUrl?: string
+  quality?: string
+}
+
+export interface ParseStreamPayload {
+  url: string
+  kind?: MediaKind
+  resourceId?: string
+  tabId?: number
+}
+
+export type RecordControlAction = 'start' | 'pause' | 'resume' | 'stop'
+
+export interface RecordControlPayload {
+  action: RecordControlAction
+  mode?: RecordMode
+  tabId?: number
+  taskId?: string
+  url?: string
+  name?: string
+}
+
+export interface RecordStatePayload {
+  taskId: string
+  status: 'recording' | 'paused' | 'completed' | 'failed'
+  elapsedMs: number
+  estimatedSizeBytes?: number
+  segmentIndex?: number
+  chromeDownloadId?: number
+  error?: string
+}
+
+export interface PlaybackRatePayload {
+  rate: number
+  tabId?: number
 }
 
 export type DownloadControlAction =
@@ -45,6 +81,7 @@ export const MessageType = {
   DETECT_RESULT: 'DETECT_RESULT',
   DOWNLOAD_START: 'DOWNLOAD_START',
   DOWNLOAD_CONTROL: 'DOWNLOAD_CONTROL',
+  PARSE_STREAM: 'PARSE_STREAM',
   HLS_START: 'HLS_START',
   HLS_PAUSE: 'HLS_PAUSE',
   HLS_ABORT: 'HLS_ABORT',
@@ -52,6 +89,8 @@ export const MessageType = {
   RECORD_CONTROL: 'RECORD_CONTROL',
   RECORD_STATE: 'RECORD_STATE',
   SET_PLAYBACK_RATE: 'SET_PLAYBACK_RATE',
+  HLS_LIVE_START: 'HLS_LIVE_START',
+  PAGE_MEDIA: 'PAGE_MEDIA',
 } as const
 
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType]
