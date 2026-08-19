@@ -26,6 +26,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         tasks: 'src/pages/tasks/index.html',
+        options: 'src/pages/options/index.html',
+        offscreen: 'src/offscreen/index.html',
       },
     },
   },

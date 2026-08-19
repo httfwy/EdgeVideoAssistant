@@ -60,6 +60,20 @@ export async function findInProgressByUrl(url: string): Promise<DownloadTask | u
   const tasks = await getDownloadTasks()
   return tasks.find(
     (item) =>
-      item.url === url && (item.status === 'waiting' || item.status === 'downloading'),
+      item.url === url &&
+      (item.status === 'waiting' ||
+        item.status === 'downloading' ||
+        item.status === 'merging' ||
+        item.status === 'paused'),
   )
+}
+
+export async function getDownloadTask(taskId: string): Promise<DownloadTask | undefined> {
+  const tasks = await getDownloadTasks()
+  return tasks.find((item) => item.id === taskId)
+}
+
+export async function removeDownloadTask(taskId: string): Promise<void> {
+  const tasks = await getDownloadTasks()
+  await setDownloadTasks(tasks.filter((item) => item.id !== taskId))
 }

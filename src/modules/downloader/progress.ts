@@ -23,6 +23,17 @@ async function handleDownloadChanged(delta: chrome.downloads.DownloadDelta): Pro
     return
   }
 
+  // HLS 分片进度由 Offscreen 上报，避免 Blob 落盘把状态改回下载中或重复通知
+  if (task.kind === 'hls') {
+    if (delta.state?.current === 'interrupted' && task.status !== 'completed') {
+      await patchDownloadTask(task.id, {
+        status: 'failed',
+        error: interruptMessage(delta.error?.current),
+      })
+    }
+    return
+  }
+
   const progress = await refreshProgress(delta.id)
   const state = delta.state?.current
 

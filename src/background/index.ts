@@ -3,6 +3,7 @@ import {
   MessageType,
   UNIMPLEMENTED_ERROR,
   type DetectScanPayload,
+  type DownloadControlPayload,
   type ErrorResponse,
   type ExtensionMessage,
   type MessageResponse,
@@ -21,10 +22,13 @@ import { draftFromUrl, type MediaDraft } from '../modules/detector/classify'
 import { draftToResource, mergeResources } from '../modules/detector/merge'
 import {
   DOWNLOAD_NOT_DIRECT,
+  applyHlsProgress,
+  controlDownload,
   registerDownloadListeners,
-  startDirectDownload,
+  startDownload,
   type DownloadStartInput,
 } from '../modules/downloader'
+import type { HlsProgressUpdate } from '../modules/hls'
 
 const unimplemented: ErrorResponse = { ok: false, error: UNIMPLEMENTED_ERROR }
 const RESTRICTED_ERROR = '当前页无法检测，请在普通网页重试'
@@ -166,12 +170,26 @@ async function handleDownloadStart(payload: DownloadStartInput | undefined): Pro
     return { ok: false, error: '链接无效' }
   }
   try {
-    await startDirectDownload(payload)
+    await startDownload(payload)
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '下载失败'
     if (message === DOWNLOAD_NOT_DIRECT) {
       return unimplemented
     }
+    return { ok: false, error: message }
+  }
+  const snapshot = await getSnapshot((await getActiveTab())?.id)
+  return { ok: true, snapshot }
+}
+
+async function handleDownloadControl(payload: DownloadControlPayload | undefined): Promise<MessageResponse> {
+  if (!payload?.action) {
+    return { ok: false, error: '操作无效' }
+  }
+  try {
+    await controlDownload(payload)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '操作失败'
     return { ok: false, error: message }
   }
   const snapshot = await getSnapshot((await getActiveTab())?.id)
@@ -208,6 +226,16 @@ async function handleMessage(
       return handleDetectResult(message.payload as DetectScanPayload | undefined, sender)
     case MessageType.DOWNLOAD_START:
       return handleDownloadStart(message.payload as DownloadStartInput | undefined)
+    case MessageType.DOWNLOAD_CONTROL:
+      return handleDownloadControl(message.payload as DownloadControlPayload | undefined)
+    case MessageType.HLS_PROGRESS: {
+      await applyHlsProgress(message.payload as HlsProgressUpdate)
+      return { ok: true }
+    }
+    case MessageType.HLS_START:
+    case MessageType.HLS_PAUSE:
+    case MessageType.HLS_ABORT:
+      return { ok: true }
     default:
       return unimplemented
   }

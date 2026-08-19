@@ -12,13 +12,233 @@ body {
   min-width: 720px;
   max-width: 960px;
   margin: 0 auto;
-  padding: 24px 16px;
+  padding: 24px 16px 48px;
   font-family: 'Segoe UI', system-ui, sans-serif;
   color: var(--color-text);
+  font-size: var(--font-body);
+}
+
+.page-header {
+  margin-bottom: var(--space-section);
 }
 
 .page-root h1 {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
+}
+
+.page-tabs {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-section);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.page-tab {
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--color-secondary);
+  font-size: var(--font-body);
+  cursor: pointer;
+}
+
+.page-tab.is-active {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-section);
+}
+
+.page-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: var(--space-card);
+  border-radius: var(--radius-card);
+  background: var(--color-bg-muted);
+  color: var(--color-secondary);
+  text-align: center;
+}
+
+.page-empty p {
+  margin: 0;
+}
+
+.page-error {
+  margin-bottom: var(--space-section);
+  padding: var(--space-card);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-card);
+  color: var(--color-danger);
+}
+
+.task-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-section);
+  padding: var(--space-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
+
+.task-card + .task-card {
+  margin-top: var(--space-1);
+}
+
+.task-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.task-name {
+  margin: 0 0 4px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.task-meta {
+  margin: 0;
+  color: var(--color-secondary);
+  font-size: var(--font-assist);
+}
+
+.task-side {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+}
+
+.task-status {
+  font-size: var(--font-assist);
+  font-weight: 600;
+}
+
+.task-status.is-running {
+  color: var(--color-primary);
+}
+
+.task-status.is-paused {
+  color: var(--color-warning);
+}
+
+.task-status.is-done {
+  color: var(--color-success);
+}
+
+.task-status.is-failed {
+  color: var(--color-danger);
+}
+
+.task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.btn-secondary,
+.btn-text {
+  box-sizing: border-box;
+  height: var(--button-height);
+  border-radius: var(--radius-button);
+  font-size: var(--font-body);
+  cursor: pointer;
+}
+
+.btn-secondary {
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.btn-text {
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+}
+
+.btn-secondary:disabled,
+.btn-text:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.options-root {
+  padding-bottom: 80px;
+}
+
+.option-group {
+  margin: 0 0 var(--space-section);
+  padding: var(--space-card) var(--space-section);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
+
+.option-group legend,
+.option-title {
+  padding: 0 6px;
+  font-size: var(--font-body);
+  font-weight: 600;
+}
+
+.option-title {
+  margin: 0 0 var(--space-1);
+}
+
+.option-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-section);
+  min-height: 36px;
+}
+
+.option-hint,
+.option-about {
+  margin: 0 0 var(--space-1);
+  color: var(--color-secondary);
+  font-size: var(--font-assist);
+  line-height: 1.5;
+}
+
+.option-row select {
+  height: var(--button-height);
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-button);
+  background: var(--color-bg);
+}
+
+.page-footer {
+  position: sticky;
+  bottom: 0;
+  margin-top: 24px;
+  padding: 12px 0;
+  background: var(--color-bg);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-secondary);
+  font-size: var(--font-assist);
+  text-align: center;
 }

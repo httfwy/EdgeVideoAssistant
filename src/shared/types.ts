@@ -112,4 +112,5 @@ export interface Snapshot {
   recordTasks: RecordTask[]
   detected: VideoResource[]
   activeRecord: ActiveRecord | null
+  history: HistoryEntry[]
 }

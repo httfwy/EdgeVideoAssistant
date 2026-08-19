@@ -18,6 +18,23 @@ export interface DownloadStartPayload {
   canDirectDownload?: boolean
 }
 
+export type DownloadControlAction =
+  | 'pause'
+  | 'resume'
+  | 'delete'
+  | 'show'
+  | 'pauseAll'
+  | 'resumeAll'
+  | 'clearCompleted'
+  | 'deleteHistory'
+  | 'redownload'
+
+export interface DownloadControlPayload {
+  action: DownloadControlAction
+  taskId?: string
+  historyId?: string
+}
+
 /** 消息 type 常量，避免各模块各写一套字符串 */
 export const MessageType = {
   PING: 'PING',
@@ -28,6 +45,9 @@ export const MessageType = {
   DETECT_RESULT: 'DETECT_RESULT',
   DOWNLOAD_START: 'DOWNLOAD_START',
   DOWNLOAD_CONTROL: 'DOWNLOAD_CONTROL',
+  HLS_START: 'HLS_START',
+  HLS_PAUSE: 'HLS_PAUSE',
+  HLS_ABORT: 'HLS_ABORT',
   HLS_PROGRESS: 'HLS_PROGRESS',
   RECORD_CONTROL: 'RECORD_CONTROL',
   RECORD_STATE: 'RECORD_STATE',

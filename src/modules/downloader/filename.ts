@@ -8,6 +8,7 @@ const EXT_BY_KIND: Partial<Record<MediaKind, string>> = {
   webm: '.webm',
   mov: '.mov',
   avi: '.avi',
+  hls: '.ts',
 }
 
 function sanitizeSegment(name: string): string {
@@ -16,7 +17,7 @@ function sanitizeSegment(name: string): string {
 }
 
 function ensureExtension(name: string, kind?: MediaKind): string {
-  if (/\.(mp4|webm|mov|avi|mkv)$/i.test(name)) {
+  if (/\.(mp4|webm|mov|avi|mkv|ts)$/i.test(name)) {
     return name
   }
   const ext = (kind && EXT_BY_KIND[kind]) || '.mp4'
@@ -26,7 +27,8 @@ function ensureExtension(name: string, kind?: MediaKind): string {
 /** 生成可交给 chrome.downloads 的文件名（不含目录） */
 export function suggestDownloadFilename(url: string, fallbackName?: string, kind?: MediaKind): string {
   const raw = (fallbackName && fallbackName.trim()) || filenameFromUrl(url)
-  const base = sanitizeSegment(raw.split(/[/\\]/).pop() ?? raw).slice(0, 120)
+  const stripped = raw.replace(/\.(m3u8|mpd)$/i, '')
+  const base = sanitizeSegment(stripped.split(/[/\\]/).pop() ?? stripped).slice(0, 120)
   return ensureExtension(base, kind)
 }
 

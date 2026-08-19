@@ -79,6 +79,17 @@ export async function setHistory(entries: HistoryEntry[]): Promise<void> {
   await setLocal(STORAGE_KEYS.history, entries)
 }
 
+export async function appendHistory(entry: HistoryEntry): Promise<void> {
+  const entries = await getHistory()
+  entries.unshift(entry)
+  await setHistory(entries)
+}
+
+export async function removeHistory(id: string): Promise<void> {
+  const entries = await getHistory()
+  await setHistory(entries.filter((item) => item.id !== id))
+}
+
 export async function getDetectedByTab(tabId: number): Promise<VideoResource[]> {
   return (await getLocal<VideoResource[]>(detectedKey(tabId))) ?? []
 }
@@ -103,12 +114,13 @@ export async function setActiveRecord(record: ActiveRecord | null): Promise<void
  * 读取 UI 快照。detected 需传入当前 tabId；本步检测未接通时传 undefined 则返回空列表。
  */
 export async function getSnapshot(tabId?: number): Promise<Snapshot> {
-  const [settings, downloadTasks, recordTasks, activeRecord, detected] = await Promise.all([
+  const [settings, downloadTasks, recordTasks, activeRecord, detected, history] = await Promise.all([
     getSettings(),
     getDownloadTasks(),
     getRecordTasks(),
     getActiveRecord(),
     tabId === undefined ? Promise.resolve([] as VideoResource[]) : getDetectedByTab(tabId),
+    getHistory(),
   ])
 
   return {
@@ -117,5 +129,6 @@ export async function getSnapshot(tabId?: number): Promise<Snapshot> {
     recordTasks,
     detected,
     activeRecord,
+    history,
   }
 }

@@ -1,3 +1,4 @@
+import { formatDownloadProgress } from '../../modules/downloader/format'
 import type { DownloadTask, VideoResource } from '../../shared/types'
 
 interface VideoListProps {
@@ -36,7 +37,35 @@ function latestTaskForUrl(url: string, tasks: DownloadTask[]): DownloadTask | un
     .sort((a, b) => b.updatedAt - a.updatedAt)[0]
 }
 
-/** 当前页视频列表；直链可下载，失败可重试 */
+function isTaskBusy(task?: DownloadTask, pendingUrl?: string, url?: string): boolean {
+  return (
+    pendingUrl === url ||
+    task?.status === 'waiting' ||
+    task?.status === 'downloading' ||
+    task?.status === 'merging' ||
+    task?.status === 'paused'
+  )
+}
+
+function DownloadButton({
+  busy,
+  failed,
+  paused,
+  onClick,
+}: {
+  busy: boolean
+  failed: boolean
+  paused?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button type="button" className="btn-primary" disabled={busy} onClick={onClick}>
+      {paused ? '已暂停' : busy ? '下载中' : failed ? '重试' : '下载'}
+    </button>
+  )
+}
+
+/** 当前页视频列表；直链与 HLS 可下载，失败可重试 */
 function VideoList({
   resources,
   downloadTasks,
@@ -78,11 +107,15 @@ function VideoList({
         <ul className="video-list">
           {resources.map((resource) => {
             const task = latestTaskForUrl(resource.url, downloadTasks)
-            const busy =
-              pendingUrl === resource.url ||
-              task?.status === 'waiting' ||
-              task?.status === 'downloading'
+            const busy = isTaskBusy(task, pendingUrl, resource.url)
             const failed = task?.status === 'failed'
+            const paused = task?.status === 'paused'
+            const showProgress =
+              task &&
+              (task.status === 'downloading' ||
+                task.status === 'merging' ||
+                task.status === 'paused' ||
+                task.status === 'waiting')
 
             return (
               <li key={resource.id} className="video-card">
@@ -92,6 +125,9 @@ function VideoList({
                   {resource.quality ? <span>{resource.quality}</span> : null}
                   <span>{formatSize(resource.sizeBytes)}</span>
                 </p>
+                {showProgress ? (
+                  <p className="video-progress">{formatDownloadProgress(task)}</p>
+                ) : null}
                 {resource.unsupportedReason ? (
                   <p className="video-unsupported">{resource.unsupportedReason}</p>
                 ) : null}
@@ -101,6 +137,18 @@ function VideoList({
                     <button type="button" className="btn-primary" disabled>
                       录制
                     </button>
+                  ) : resource.kind === 'hls' ? (
+                    <>
+                      <button type="button" className="btn-secondary" disabled>
+                        解析
+                      </button>
+                      <DownloadButton
+                        busy={busy}
+                        failed={failed}
+                        paused={paused}
+                        onClick={() => onDownload(resource, failed ? task?.id : undefined)}
+                      />
+                    </>
                   ) : resource.needsParse ? (
                     <>
                       <button type="button" className="btn-secondary" disabled>
@@ -111,14 +159,12 @@ function VideoList({
                       </button>
                     </>
                   ) : resource.canDirectDownload ? (
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      disabled={busy}
+                    <DownloadButton
+                      busy={busy}
+                      failed={failed}
+                      paused={paused}
                       onClick={() => onDownload(resource, failed ? task?.id : undefined)}
-                    >
-                      {busy ? '下载中' : failed ? '重试' : '下载'}
-                    </button>
+                    />
                   ) : (
                     <button type="button" className="btn-secondary" disabled>
                       去录制

@@ -1,8 +1,9 @@
 import { classifyKind } from '../detector/classify'
-import { getDownloadTasks, getSettings } from '../../shared/storage'
-import type { DownloadTask, MediaKind } from '../../shared/types'
+import { appendHistory, getDownloadTasks, getSettings } from '../../shared/storage'
+import type { DownloadKind, DownloadTask, MediaKind } from '../../shared/types'
 import { isDirectKind, suggestDownloadFilename } from './filename'
-import { createDownloadTask, findInProgressByUrl, patchDownloadTask, upsertDownloadTask } from './tasks'
+import { startOffscreenHls } from './offscreen'
+import { createDownloadTask, findInProgressByUrl, getDownloadTask, patchDownloadTask, upsertDownloadTask } from './tasks'
 
 export interface DownloadStartInput {
   url: string
@@ -37,6 +38,52 @@ function interruptMessage(error?: chrome.downloads.InterruptReason): string {
 
 export { interruptMessage }
 
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
+}
+
+async function prepareTask(
+  input: DownloadStartInput,
+  kind: DownloadKind,
+  mediaKind: MediaKind,
+): Promise<{ task: DownloadTask; filename: string }> {
+  const filename = suggestDownloadFilename(input.url, input.name, mediaKind)
+  const existingActive = await findInProgressByUrl(input.url)
+  if (existingActive && existingActive.id !== input.taskId) {
+    return { task: existingActive, filename }
+  }
+
+  if (input.taskId) {
+    const tasks = await getDownloadTasks()
+    const found = tasks.find((item) => item.id === input.taskId)
+    if (!found) {
+      throw new Error('任务不存在')
+    }
+    const task: DownloadTask = {
+      ...found,
+      name: filename,
+      url: input.url,
+      kind,
+      status: 'waiting',
+      progress: 0,
+      error: undefined,
+      chromeDownloadId: undefined,
+      segmentCurrent: 0,
+      segmentTotal: undefined,
+    }
+    await upsertDownloadTask(task)
+    return { task, filename }
+  }
+
+  const task = createDownloadTask({ url: input.url, name: filename, kind })
+  await upsertDownloadTask(task)
+  return { task, filename }
+}
+
 export async function startDirectDownload(input: DownloadStartInput): Promise<DownloadTask> {
   let parsed: URL
   try {
@@ -48,39 +95,8 @@ export async function startDirectDownload(input: DownloadStartInput): Promise<Do
     throw new Error('链接无效')
   }
 
-  const kind = input.kind ?? classifyKind(input.url)
-  if (kind === 'hls' || kind === 'dash' || (!isDirectKind(kind) && !input.canDirectDownload)) {
-    throw new Error(DOWNLOAD_NOT_DIRECT)
-  }
-
-  const filename = suggestDownloadFilename(input.url, input.name, kind)
-  const existingActive = await findInProgressByUrl(input.url)
-  if (existingActive && existingActive.id !== input.taskId) {
-    return existingActive
-  }
-
-  let task: DownloadTask
-  if (input.taskId) {
-    const tasks = await getDownloadTasks()
-    const found = tasks.find((item) => item.id === input.taskId)
-    if (!found) {
-      throw new Error('任务不存在')
-    }
-    task = {
-      ...found,
-      name: filename,
-      url: input.url,
-      kind: 'direct',
-      status: 'waiting',
-      progress: 0,
-      error: undefined,
-      chromeDownloadId: undefined,
-    }
-    await upsertDownloadTask(task)
-  } else {
-    task = createDownloadTask({ url: input.url, name: filename, kind: 'direct' })
-    await upsertDownloadTask(task)
-  }
+  const mediaKind = input.kind ?? classifyKind(input.url)
+  const { task, filename } = await prepareTask(input, 'direct', mediaKind)
 
   try {
     const downloadId = await chrome.downloads.download({
@@ -107,8 +123,88 @@ export async function startDirectDownload(input: DownloadStartInput): Promise<Do
   }
 }
 
+export async function startHlsDownload(input: DownloadStartInput): Promise<DownloadTask> {
+  if (input.taskId) {
+    const existing = await getDownloadTask(input.taskId)
+    if (existing && (existing.status === 'paused' || existing.status === 'downloading')) {
+      const filename = suggestDownloadFilename(existing.url, existing.name, 'hls')
+      const startIndex = existing.segmentCurrent ?? 0
+      await patchDownloadTask(existing.id, { status: 'downloading', error: undefined })
+      await startOffscreenHls({
+        taskId: existing.id,
+        url: existing.url,
+        filename,
+        startIndex,
+      })
+      return existing
+    }
+  }
+
+  const { task, filename } = await prepareTask(input, 'hls', 'hls')
+  if (task.status === 'downloading' || task.status === 'merging') {
+    return task
+  }
+
+  await patchDownloadTask(task.id, {
+    status: 'downloading',
+    error: undefined,
+    segmentCurrent: 0,
+  })
+
+  try {
+    await startOffscreenHls({
+      taskId: task.id,
+      url: input.url,
+      filename,
+      startIndex: 0,
+    })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '下载失败'
+    const updated = await patchDownloadTask(task.id, { status: 'failed', error: message })
+    if (updated) {
+      return updated
+    }
+    throw new Error(message)
+  }
+
+  return (await patchDownloadTask(task.id, { status: 'downloading' })) ?? task
+}
+
+export async function startDownload(input: DownloadStartInput): Promise<DownloadTask> {
+  let parsed: URL
+  try {
+    parsed = new URL(input.url)
+  } catch {
+    throw new Error('链接无效')
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('链接无效')
+  }
+
+  const kind = input.kind ?? classifyKind(input.url)
+  if (kind === 'hls') {
+    return startHlsDownload(input)
+  }
+  if (kind === 'dash' || (!isDirectKind(kind) && !input.canDirectDownload)) {
+    throw new Error(DOWNLOAD_NOT_DIRECT)
+  }
+  return startDirectDownload(input)
+}
+
 export async function notifyDownloadComplete(task: DownloadTask): Promise<void> {
+  await appendHistory({
+    id: crypto.randomUUID(),
+    kind: 'download',
+    name: task.name,
+    source: `${hostOf(task.url)} · ${task.kind}`,
+    url: task.url,
+    createdAt: Date.now(),
+  })
+
   const settings = await getSettings()
+  if (settings.autoOpenFolder && task.chromeDownloadId !== undefined) {
+    chrome.downloads.show(task.chromeDownloadId)
+  }
   if (!settings.notifyOnComplete) {
     return
   }
