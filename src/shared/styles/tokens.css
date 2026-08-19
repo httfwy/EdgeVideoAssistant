@@ -1,0 +1,20 @@
+:root {
+  --color-primary: #1a73e8;
+  --color-success: #0f9d58;
+  --color-warning: #f9ab00;
+  --color-danger: #d93025;
+  --color-text: #202124;
+  --color-secondary: #5f6368;
+  --color-border: #e8eaed;
+  --color-bg: #ffffff;
+  --color-bg-muted: #f8f9fa;
+  --space-1: 8px;
+  --space-card: 12px;
+  --space-section: 16px;
+  --radius-button: 6px;
+  --radius-card: 8px;
+  --button-height: 32px;
+  --font-title: 16px;
+  --font-body: 13px;
+  --font-assist: 12px;
+}

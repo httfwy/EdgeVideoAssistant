@@ -5,4 +5,11 @@ import manifest from './manifest.json'
 
 export default defineConfig({
   plugins: [react(), crx({ manifest })],
+  build: {
+    rollupOptions: {
+      input: {
+        tasks: 'src/pages/tasks/index.html',
+      },
+    },
+  },
 })

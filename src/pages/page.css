@@ -1,0 +1,24 @@
+@import '../shared/styles/tokens.css';
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-bg);
+}
+
+.page-root {
+  box-sizing: border-box;
+  min-width: 720px;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 16px;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: var(--color-text);
+}
+
+.page-root h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
