@@ -130,6 +130,12 @@ body {
   font-size: var(--font-assist);
 }
 
+.video-unsupported {
+  margin: 0 0 var(--space-1);
+  color: var(--color-danger);
+  font-size: var(--font-assist);
+}
+
 .tag {
   padding: 0 6px;
   border-radius: 4px;

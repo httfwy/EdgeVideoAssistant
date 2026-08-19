@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Footer from './components/Footer'
 import Header from './components/Header'
 import RecordSection from './components/RecordSection'
@@ -9,7 +9,6 @@ import type { Snapshot } from '../shared/types'
 
 const TASKS_PAGE = 'src/pages/tasks/index.html'
 const OPTIONS_PAGE = 'src/pages/options/index.html'
-const DETECT_PLACEHOLDER_MS = 800
 
 function countInProgress(snapshot: Snapshot): number {
   const downloads = snapshot.downloadTasks.filter(
@@ -29,6 +28,32 @@ function App() {
   const [detecting, setDetecting] = useState(false)
   const [playbackRate, setPlaybackRate] = useState(1)
 
+  const runDetect = useCallback(async () => {
+    setDetecting(true)
+    setError('')
+    try {
+      const response = await sendMessage(MessageType.DETECT_REFRESH)
+      if (!response || !response.ok) {
+        const message =
+          response && 'error' in response && response.error
+            ? response.error
+            : '当前页无法检测，请在普通网页重试'
+        setError(message)
+        setStatus('error')
+        return
+      }
+      if ('snapshot' in response) {
+        setSnapshot(response.snapshot)
+      }
+      setStatus('ready')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '当前页无法检测，请在普通网页重试')
+      setStatus('error')
+    } finally {
+      setDetecting(false)
+    }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
 
@@ -37,38 +62,26 @@ function App() {
         if (cancelled) {
           return
         }
-        if (!response || !response.ok || !('snapshot' in response)) {
-          const message =
-            response && 'error' in response && response.error ? response.error : '读取快照失败'
-          setError(message)
-          setStatus('error')
-          return
+        if (response?.ok && 'snapshot' in response) {
+          setSnapshot(response.snapshot)
         }
-        setSnapshot(response.snapshot)
-        setStatus('ready')
       })
-      .catch((err: unknown) => {
-        if (cancelled) {
-          return
+      .finally(() => {
+        if (!cancelled) {
+          void runDetect()
         }
-        setError(err instanceof Error ? err.message : '读取快照失败')
-        setStatus('error')
       })
 
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [runDetect])
 
   function handleRefresh() {
     if (detecting) {
       return
     }
-    setDetecting(true)
-    setError('')
-    window.setTimeout(() => {
-      setDetecting(false)
-    }, DETECT_PLACEHOLDER_MS)
+    void runDetect()
   }
 
   function openExtensionPage(path: string) {

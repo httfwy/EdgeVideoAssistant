@@ -1,4 +1,13 @@
+import type { MediaDraft } from '../modules/detector/classify'
 import type { Settings, Snapshot } from './types'
+
+/** Content Script / 刷新扫描上报 */
+export interface DetectScanPayload {
+  items: MediaDraft[]
+  pageTitle?: string
+  pageUrl?: string
+  tabId?: number
+}
 
 /** 消息 type 常量，避免各模块各写一套字符串 */
 export const MessageType = {

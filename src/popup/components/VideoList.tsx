@@ -67,6 +67,9 @@ function VideoList({ resources, detecting, error, onRetry }: VideoListProps) {
                 {resource.quality ? <span>{resource.quality}</span> : null}
                 <span>{formatSize(resource.sizeBytes)}</span>
               </p>
+              {resource.unsupportedReason ? (
+                <p className="video-unsupported">{resource.unsupportedReason}</p>
+              ) : null}
               <div className="card-actions">
                 {resource.isLive ? (
                   <button type="button" className="btn-primary" disabled>

@@ -87,6 +87,10 @@ export async function setDetectedByTab(tabId: number, resources: VideoResource[]
   await setLocal(detectedKey(tabId), resources)
 }
 
+export async function removeDetectedByTab(tabId: number): Promise<void> {
+  await chrome.storage.local.remove(detectedKey(tabId))
+}
+
 export async function getActiveRecord(): Promise<ActiveRecord | null> {
   return (await getLocal<ActiveRecord | null>(STORAGE_KEYS.activeRecord)) ?? null
 }
