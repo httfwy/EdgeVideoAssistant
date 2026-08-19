@@ -19,6 +19,12 @@ import {
 import type { Settings, VideoResource } from '../shared/types'
 import { draftFromUrl, type MediaDraft } from '../modules/detector/classify'
 import { draftToResource, mergeResources } from '../modules/detector/merge'
+import {
+  DOWNLOAD_NOT_DIRECT,
+  registerDownloadListeners,
+  startDirectDownload,
+  type DownloadStartInput,
+} from '../modules/downloader'
 
 const unimplemented: ErrorResponse = { ok: false, error: UNIMPLEMENTED_ERROR }
 const RESTRICTED_ERROR = '当前页无法检测，请在普通网页重试'
@@ -155,6 +161,23 @@ async function ingestWebRequest(details: chrome.webRequest.WebResponseHeadersDet
   await upsertDrafts(details.tabId, [draft], pageTitle, pageUrl)
 }
 
+async function handleDownloadStart(payload: DownloadStartInput | undefined): Promise<MessageResponse> {
+  if (!payload?.url) {
+    return { ok: false, error: '链接无效' }
+  }
+  try {
+    await startDirectDownload(payload)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '下载失败'
+    if (message === DOWNLOAD_NOT_DIRECT) {
+      return unimplemented
+    }
+    return { ok: false, error: message }
+  }
+  const snapshot = await getSnapshot((await getActiveTab())?.id)
+  return { ok: true, snapshot }
+}
+
 async function handleMessage(
   message: ExtensionMessage,
   sender: chrome.runtime.MessageSender,
@@ -183,12 +206,15 @@ async function handleMessage(
     }
     case MessageType.DETECT_RESULT:
       return handleDetectResult(message.payload as DetectScanPayload | undefined, sender)
+    case MessageType.DOWNLOAD_START:
+      return handleDownloadStart(message.payload as DownloadStartInput | undefined)
     default:
       return unimplemented
   }
 }
 
 void ensureDefaultSettings()
+registerDownloadListeners()
 
 chrome.runtime.onInstalled.addListener(() => {
   void ensureDefaultSettings()

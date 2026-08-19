@@ -1,5 +1,5 @@
 import type { MediaDraft } from '../modules/detector/classify'
-import type { Settings, Snapshot } from './types'
+import type { MediaKind, Settings, Snapshot } from './types'
 
 /** Content Script / 刷新扫描上报 */
 export interface DetectScanPayload {
@@ -7,6 +7,15 @@ export interface DetectScanPayload {
   pageTitle?: string
   pageUrl?: string
   tabId?: number
+}
+
+export interface DownloadStartPayload {
+  url: string
+  name?: string
+  resourceId?: string
+  taskId?: string
+  kind?: MediaKind
+  canDirectDownload?: boolean
 }
 
 /** 消息 type 常量，避免各模块各写一套字符串 */

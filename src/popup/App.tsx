@@ -4,8 +4,9 @@ import Header from './components/Header'
 import RecordSection from './components/RecordSection'
 import SpeedChips from './components/SpeedChips'
 import VideoList from './components/VideoList'
-import { MessageType, sendMessage } from '../shared/messages'
-import type { Snapshot } from '../shared/types'
+import { STORAGE_KEYS } from '../shared/constants'
+import { MessageType, sendMessage, type MessageResponse } from '../shared/messages'
+import type { Snapshot, VideoResource } from '../shared/types'
 
 const TASKS_PAGE = 'src/pages/tasks/index.html'
 const OPTIONS_PAGE = 'src/pages/options/index.html'
@@ -26,7 +27,19 @@ function App() {
   const [error, setError] = useState('')
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [detecting, setDetecting] = useState(false)
+  const [pendingUrl, setPendingUrl] = useState('')
   const [playbackRate, setPlaybackRate] = useState(1)
+
+  const applySnapshot = useCallback((response: MessageResponse) => {
+    if (response?.ok && 'snapshot' in response) {
+      setSnapshot(response.snapshot)
+    }
+  }, [])
+
+  const refreshSnapshot = useCallback(async () => {
+    const response = await sendMessage(MessageType.GET_SNAPSHOT)
+    applySnapshot(response)
+  }, [applySnapshot])
 
   const runDetect = useCallback(async () => {
     setDetecting(true)
@@ -42,9 +55,7 @@ function App() {
         setStatus('error')
         return
       }
-      if ('snapshot' in response) {
-        setSnapshot(response.snapshot)
-      }
+      applySnapshot(response)
       setStatus('ready')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '当前页无法检测，请在普通网页重试')
@@ -52,7 +63,7 @@ function App() {
     } finally {
       setDetecting(false)
     }
-  }, [])
+  }, [applySnapshot])
 
   useEffect(() => {
     let cancelled = false
@@ -62,9 +73,7 @@ function App() {
         if (cancelled) {
           return
         }
-        if (response?.ok && 'snapshot' in response) {
-          setSnapshot(response.snapshot)
-        }
+        applySnapshot(response)
       })
       .finally(() => {
         if (!cancelled) {
@@ -75,7 +84,26 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [runDetect])
+  }, [applySnapshot, runDetect])
+
+  useEffect(() => {
+    function onStorageChanged(
+      changes: { [key: string]: chrome.storage.StorageChange },
+      area: string,
+    ) {
+      if (area !== 'local') {
+        return
+      }
+      if (changes[STORAGE_KEYS.downloadTasks] || changes[STORAGE_KEYS.settings]) {
+        void refreshSnapshot()
+      }
+    }
+
+    chrome.storage.onChanged.addListener(onStorageChanged)
+    return () => {
+      chrome.storage.onChanged.removeListener(onStorageChanged)
+    }
+  }, [refreshSnapshot])
 
   function handleRefresh() {
     if (detecting) {
@@ -84,12 +112,36 @@ function App() {
     void runDetect()
   }
 
+  async function handleDownload(resource: VideoResource, taskId?: string) {
+    if (pendingUrl) {
+      return
+    }
+    setPendingUrl(resource.url)
+    try {
+      const response = await sendMessage(MessageType.DOWNLOAD_START, {
+        url: resource.url,
+        name: resource.title,
+        resourceId: resource.id,
+        taskId,
+        kind: resource.kind,
+        canDirectDownload: resource.canDirectDownload,
+      })
+      if (!response?.ok) {
+        return
+      }
+      applySnapshot(response)
+    } finally {
+      setPendingUrl('')
+    }
+  }
+
   function openExtensionPage(path: string) {
     void chrome.tabs.create({ url: chrome.runtime.getURL(path) })
   }
 
   const badgeCount = useMemo(() => (snapshot ? countInProgress(snapshot) : 0), [snapshot])
   const resources = snapshot?.detected ?? []
+  const downloadTasks = snapshot?.downloadTasks ?? []
   const listError = status === 'error' ? error : ''
   const isDetecting = detecting || status === 'loading'
 
@@ -99,9 +151,12 @@ function App() {
       <div className="popup-body">
         <VideoList
           resources={resources}
+          downloadTasks={downloadTasks}
           detecting={isDetecting}
           error={listError}
+          pendingUrl={pendingUrl}
           onRetry={handleRefresh}
+          onDownload={handleDownload}
         />
         <RecordSection />
         <SpeedChips value={playbackRate} onChange={setPlaybackRate} />
