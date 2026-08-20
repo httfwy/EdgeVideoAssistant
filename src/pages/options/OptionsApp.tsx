@@ -122,6 +122,15 @@ function OptionsApp() {
           </select>
         </label>
         <label className="option-row">
+          <span>仅录制视频区域</span>
+          <input
+            type="checkbox"
+            checked={settings.recordVideoOnly ?? true}
+            onChange={(event) => void patch({ recordVideoOnly: event.target.checked })}
+          />
+        </label>
+        <p className="option-hint">标签页录制时裁切到播放器；找不到视频则仍录整页。屏幕录制不受影响。</p>
+        <label className="option-row">
           <span>直播自动分段</span>
           <select
             value={settings.liveSegmentMinutes}

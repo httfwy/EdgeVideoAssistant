@@ -235,6 +235,21 @@ function App() {
     }
   }
 
+  async function handleRecordVideoOnly(value: boolean) {
+    if (snapshot) {
+      setSnapshot({ ...snapshot, settings: { ...snapshot.settings, recordVideoOnly: value } })
+    }
+    try {
+      const response = await sendMessage(MessageType.PATCH_SETTINGS, { recordVideoOnly: value })
+      if (response?.ok && 'settings' in response) {
+        const settings = response.settings
+        setSnapshot((current) => (current ? { ...current, settings } : current))
+      }
+    } catch {
+      void refreshSnapshot()
+    }
+  }
+
   async function handleSpeed(rate: number) {
     setPlaybackRate(rate)
     try {
@@ -286,11 +301,13 @@ function App() {
           task={recordTask}
           liveAvailable={liveAvailable}
           liveSegmentMinutes={snapshot?.settings.liveSegmentMinutes ?? 30}
+          recordVideoOnly={snapshot?.settings.recordVideoOnly ?? true}
           error={recordError}
           onStart={(mode) => void handleRecord('start', mode)}
           onPause={() => void handleRecord('pause')}
           onResume={() => void handleRecord('resume')}
           onStop={() => void handleRecord('stop')}
+          onToggleVideoOnly={(value) => void handleRecordVideoOnly(value)}
         />
         <SpeedChips value={playbackRate} onChange={(rate) => void handleSpeed(rate)} />
       </div>

@@ -10,6 +10,7 @@ import {
   type ParseStreamPayload,
   type PlaybackRatePayload,
   type RecordControlPayload,
+  type RecordPrepareCropPayload,
   type RecordStatePayload,
   type SaveBlobPayload,
   type FetchProgressUpdate,
@@ -40,7 +41,7 @@ import {
   type DownloadStartInput,
 } from '../modules/downloader'
 import type { HlsProgressUpdate } from '../modules/hls'
-import { applyRecordState, controlRecord } from '../modules/recorder'
+import { applyRecordState, controlRecord, prepareCropOnTab } from '../modules/recorder'
 
 const unimplemented: ErrorResponse = { ok: false, error: UNIMPLEMENTED_ERROR }
 const RESTRICTED_ERROR = '当前页无法检测，请在普通网页重试'
@@ -286,6 +287,16 @@ async function handleMessage(
       await applyRecordState(message.payload as RecordStatePayload)
       return { ok: true }
     }
+    case MessageType.RECORD_PREPARE_CROP: {
+      const payload = message.payload as RecordPrepareCropPayload | undefined
+      if (payload?.taskId && payload.tabId !== undefined) {
+        await prepareCropOnTab(payload.tabId, payload.taskId)
+      }
+      return { ok: true }
+    }
+    case MessageType.RECORD_CROP_RECT:
+    case MessageType.RECORD_STOP_CROP:
+      return { ok: true }
     case MessageType.SET_PLAYBACK_RATE: {
       const payload = (message.payload ?? {}) as PlaybackRatePayload
       const tab = payload.tabId !== undefined ? await chrome.tabs.get(payload.tabId) : await getActiveTab()

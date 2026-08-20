@@ -1,1 +1,1 @@
-export { applyRecordState, controlRecord, CAPTURE_DENIED } from './control'
+export { applyRecordState, controlRecord, prepareCropOnTab, stopCropOnTab, CAPTURE_DENIED } from './control'

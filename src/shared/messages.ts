@@ -49,6 +49,25 @@ export interface RecordControlPayload {
   name?: string
 }
 
+/** 视频区域相对当前视口的矩形，供 Offscreen 画布裁切 */
+export interface CropRectPayload {
+  taskId: string
+  x: number
+  y: number
+  width: number
+  height: number
+  viewportWidth: number
+  viewportHeight: number
+}
+
+export interface RecordPrepareCropPayload {
+  taskId: string
+  tabId?: number
+}
+
+/** Offscreen 与裁切桥页之间传递 CropTarget */
+export const CROP_CHANNEL = 'eva-crop-target'
+
 export interface RecordStatePayload {
   taskId: string
   status: 'recording' | 'paused' | 'completed' | 'failed'
@@ -98,6 +117,9 @@ export const MessageType = {
   HLS_PROGRESS: 'HLS_PROGRESS',
   RECORD_CONTROL: 'RECORD_CONTROL',
   RECORD_STATE: 'RECORD_STATE',
+  RECORD_PREPARE_CROP: 'RECORD_PREPARE_CROP',
+  RECORD_CROP_RECT: 'RECORD_CROP_RECT',
+  RECORD_STOP_CROP: 'RECORD_STOP_CROP',
   SET_PLAYBACK_RATE: 'SET_PLAYBACK_RATE',
   HLS_LIVE_START: 'HLS_LIVE_START',
   PAGE_MEDIA: 'PAGE_MEDIA',

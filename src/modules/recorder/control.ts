@@ -5,6 +5,39 @@ import { createRecordTask, getRecordTask, patchRecordTask, upsertRecordTask } fr
 
 export const CAPTURE_DENIED = '请允许标签页捕获后重试'
 
+export async function stopCropOnTab(tabId?: number): Promise<void> {
+  if (tabId === undefined) {
+    return
+  }
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: MessageType.RECORD_STOP_CROP })
+  } catch {
+    // 页面已关闭或未注入 content script
+  }
+}
+
+export async function prepareCropOnTab(tabId: number, taskId: string): Promise<void> {
+  const send = () =>
+    chrome.tabs.sendMessage(tabId, {
+      type: MessageType.RECORD_PREPARE_CROP,
+      payload: { taskId, tabId },
+    })
+  try {
+    await send()
+  } catch {
+    const files = chrome.runtime.getManifest().content_scripts?.[0]?.js
+    if (!files?.length) {
+      return
+    }
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files })
+      await send()
+    } catch {
+      // 找不到视频时仍录制整页
+    }
+  }
+}
+
 function fileBase(mode: string): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
   return `record-${mode}-${stamp}`
@@ -32,10 +65,13 @@ export async function applyRecordState(update: RecordStatePayload): Promise<void
       status: update.status,
       startedAt: current?.startedAt ?? Date.now(),
       elapsedMs: update.elapsedMs,
+      tabId: current?.tabId,
     })
   }
 
   if (update.status === 'completed' || update.status === 'failed') {
+    const active = await getActiveRecord()
+    await stopCropOnTab(active?.tabId)
     await setActiveRecord(null)
     if (update.status === 'completed' && patched) {
       await appendHistory({
@@ -78,24 +114,31 @@ export async function controlRecord(payload: RecordControlPayload): Promise<void
     const mode = payload.mode === 'live' && !payload.url ? 'tab' : (payload.mode ?? 'tab')
     const task = createRecordTask({ name: payload.name || fileBase(mode), mode })
     await upsertRecordTask(task)
+    const tabId = payload.tabId
     await setActiveRecord({
       taskId: task.id,
       mode,
       status: 'recording',
       startedAt: Date.now(),
       elapsedMs: 0,
+      tabId,
     })
 
     const settings = await getSettings()
+    const cropToVideo = mode === 'tab' && settings.recordVideoOnly
+    if (cropToVideo && tabId !== undefined) {
+      void prepareCropOnTab(tabId, task.id)
+    }
+
     let streamId: string | undefined
     if (mode === 'tab') {
-      const tabId = payload.tabId
       if (tabId === undefined) {
         throw new Error(CAPTURE_DENIED)
       }
       try {
         streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId })
       } catch {
+        await stopCropOnTab(tabId)
         await patchRecordTask(task.id, { status: 'failed', error: CAPTURE_DENIED })
         await setActiveRecord(null)
         throw new Error(CAPTURE_DENIED)
@@ -111,8 +154,11 @@ export async function controlRecord(payload: RecordControlPayload): Promise<void
         filename: task.name,
         url: payload.url,
         segmentMinutes: settings.liveSegmentMinutes,
+        cropToVideo,
+        tabId,
       })
     } catch {
+      await stopCropOnTab(tabId)
       await patchRecordTask(task.id, { status: 'failed', error: CAPTURE_DENIED })
       await setActiveRecord(null)
       throw new Error(CAPTURE_DENIED)
@@ -143,6 +189,7 @@ export async function controlRecord(payload: RecordControlPayload): Promise<void
     return
   }
   if (payload.action === 'stop') {
+    await stopCropOnTab(payload.tabId ?? active?.tabId)
     try {
       await sendToOffscreen(MessageType.RECORD_CONTROL, {
         action: 'stop',

@@ -5,11 +5,13 @@ interface RecordSectionProps {
   task?: RecordTask
   liveAvailable: boolean
   liveSegmentMinutes: number
+  recordVideoOnly: boolean
   error: string
   onStart: (mode: 'tab' | 'screen' | 'live') => void
   onPause: () => void
   onResume: () => void
   onStop: () => void
+  onToggleVideoOnly: (value: boolean) => void
 }
 
 function formatDuration(ms: number): string {
@@ -26,11 +28,13 @@ function RecordSection({
   task,
   liveAvailable,
   liveSegmentMinutes,
+  recordVideoOnly,
   error,
   onStart,
   onPause,
   onResume,
   onStop,
+  onToggleVideoOnly,
 }: RecordSectionProps) {
   const recording = active?.status === 'recording'
   const paused = active?.status === 'paused'
@@ -72,6 +76,17 @@ function RecordSection({
             屏幕录制
           </button>
         </div>
+      )}
+
+      {active ? null : (
+        <label className="record-crop-row">
+          <input
+            type="checkbox"
+            checked={recordVideoOnly}
+            onChange={(event) => onToggleVideoOnly(event.target.checked)}
+          />
+          仅录制视频区域
+        </label>
       )}
 
       <div className="live-row">

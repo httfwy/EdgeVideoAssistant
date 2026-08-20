@@ -115,6 +115,7 @@ export interface ActiveRecord {
   status: Extract<RecordStatus, 'recording' | 'paused'>
   startedAt: number
   elapsedMs: number
+  tabId?: number
 }
 
 /** 用户设置 */
@@ -127,6 +128,8 @@ export interface Settings {
   rememberPlaybackRate: boolean
   showPageSpeedControl: boolean
   lastPlaybackRate?: number
+  /** 标签页录制时裁切到视频区域，找不到视频则仍录整页 */
+  recordVideoOnly: boolean
 }
 
 /** Popup / 任务页读取的存储快照 */

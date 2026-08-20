@@ -28,6 +28,7 @@ export default defineConfig({
         tasks: 'src/pages/tasks/index.html',
         options: 'src/pages/options/index.html',
         offscreen: 'src/offscreen/index.html',
+        cropBridge: 'src/content/crop-bridge.html',
       },
     },
   },

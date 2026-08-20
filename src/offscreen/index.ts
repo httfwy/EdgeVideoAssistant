@@ -1,6 +1,14 @@
 import { saveObjectUrl } from '../modules/downloader/saveBlob'
 import { runFetchSave } from '../modules/downloader/fetchSave'
-import { MessageType, type ExtensionMessage, type FetchSavePayload, type RecordStatePayload } from '../shared/messages'
+import { applyTabCrop } from '../modules/recorder/applyCrop'
+import type { CanvasCropHandle } from '../modules/recorder/canvasCrop'
+import {
+  MessageType,
+  type CropRectPayload,
+  type ExtensionMessage,
+  type FetchSavePayload,
+  type RecordStatePayload,
+} from '../shared/messages'
 import {
   abortHlsSession,
   abortLiveSession,
@@ -29,6 +37,8 @@ interface RecordStartPayload {
   filename?: string
   url?: string
   segmentMinutes?: number
+  cropToVideo?: boolean
+  tabId?: number
 }
 
 interface CaptureConstraints {
@@ -46,6 +56,7 @@ interface TabMediaConstraints {
 interface RecSession {
   recorder: MediaRecorder
   stream: MediaStream
+  sourceStream: MediaStream
   chunks: Blob[]
   taskId: string
   filename: string
@@ -53,10 +64,12 @@ interface RecSession {
   pausedAt?: number
   pausedMs: number
   timer: number
+  cropHandle?: CanvasCropHandle
 }
 
 let recSession: RecSession | null = null
 let stoppingTaskId: string | null = null
+let latestCropRect: CropRectPayload | null = null
 
 function reportHls(update: HlsProgressUpdate) {
   void chrome.runtime.sendMessage(
@@ -88,8 +101,11 @@ function reportLive(update: LiveProgressUpdate) {
   })
 }
 
-function pickMime(): string {
-  const candidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+function pickMime(stream?: MediaStream): string {
+  const hasAudio = Boolean(stream?.getAudioTracks().length)
+  const candidates = hasAudio
+    ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+    : ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
   return candidates.find((item) => MediaRecorder.isTypeSupported(item)) ?? 'video/webm'
 }
 
@@ -160,22 +176,57 @@ async function startRecorder(payload: RecordStartPayload) {
     return
   }
 
-  const stream = await captureStream(payload)
-  const recorder = new MediaRecorder(stream, { mimeType: pickMime() })
+  const sourceStream = await captureStream(payload)
+  let stream = sourceStream
+  let cropHandle: CanvasCropHandle | undefined
+  if (payload.cropToVideo && payload.mode === 'tab') {
+    if (payload.tabId !== undefined) {
+      void chrome.runtime.sendMessage(
+        {
+          type: MessageType.RECORD_PREPARE_CROP,
+          payload: { taskId: payload.taskId, tabId: payload.tabId },
+        } satisfies ExtensionMessage<{ taskId: string; tabId: number }>,
+        () => {
+          void chrome.runtime.lastError
+        },
+      )
+    }
+    const cropped = await applyTabCrop(sourceStream, payload.taskId, () =>
+      latestCropRect?.taskId === payload.taskId ? latestCropRect : null,
+    )
+    stream = cropped.stream
+    cropHandle = cropped.handle
+  }
+  const videoTrack = stream.getVideoTracks()[0]
+  if (!videoTrack || videoTrack.readyState === 'ended') {
+    stopTracks(sourceStream)
+    throw new Error('请允许标签页捕获后重试')
+  }
+  const recorder = new MediaRecorder(stream, { mimeType: pickMime(stream) })
   const session: RecSession = {
     recorder,
     stream,
+    sourceStream,
     chunks: [],
     taskId: payload.taskId,
     filename: `${(payload.filename || 'record').replace(/\.webm$/i, '')}.webm`,
     startedAt: Date.now(),
     pausedMs: 0,
     timer: 0,
+    cropHandle,
   }
   recorder.ondataavailable = (event) => {
     if (event.data.size) {
       session.chunks.push(event.data)
     }
+  }
+  recorder.onerror = () => {
+    reportRecord({
+      taskId: payload.taskId,
+      status: 'failed',
+      elapsedMs: Math.max(0, elapsedOf(session)),
+      error: '录制失败',
+    })
   }
   recorder.start(1000)
   recSession = session
@@ -189,6 +240,7 @@ function pauseRecorder() {
   if (recSession.recorder.state === 'recording') {
     recSession.recorder.pause()
   }
+  recSession.cropHandle?.pause()
   recSession.pausedAt = Date.now()
 }
 
@@ -200,6 +252,7 @@ function resumeRecorder() {
     recSession.pausedMs += Date.now() - recSession.pausedAt
     recSession.pausedAt = undefined
   }
+  recSession.cropHandle?.resume()
   if (recSession.recorder.state === 'paused') {
     recSession.recorder.resume()
   }
@@ -249,6 +302,7 @@ async function stopRecorder(): Promise<void> {
     return
   }
   recSession = null
+  latestCropRect = null
   window.clearInterval(session.timer)
 
   let blob = new Blob(session.chunks, { type: 'video/webm' })
@@ -257,7 +311,11 @@ async function stopRecorder(): Promise<void> {
   } catch {
     blob = new Blob(session.chunks, { type: 'video/webm' })
   }
+  session.cropHandle?.stop()
   stopTracks(session.stream)
+  if (session.sourceStream !== session.stream) {
+    stopTracks(session.sourceStream)
+  }
 
   if (!blob.size) {
     reportRecord({
@@ -347,6 +405,17 @@ async function handleStop(taskId: string): Promise<void> {
 }
 
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
+  if (message.type === MessageType.RECORD_CROP_RECT) {
+    const rect = message.payload as CropRectPayload | undefined
+    if (rect?.taskId) {
+      latestCropRect = rect
+      if (recSession?.taskId === rect.taskId) {
+        recSession.cropHandle?.updateRect(rect)
+      }
+    }
+    sendResponse({ ok: true })
+    return
+  }
   if (message.target !== 'offscreen') {
     return
   }

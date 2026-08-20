@@ -12,6 +12,7 @@ export const DEFAULT_SETTINGS: Settings = {
   liveSegmentMinutes: 30,
   rememberPlaybackRate: false,
   showPageSpeedControl: true,
+  recordVideoOnly: true,
 }
 
 /** chrome.storage.local 键名（与开发计划第 8 节一致） */

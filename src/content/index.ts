@@ -3,6 +3,7 @@ import {
   formatBiliDraftTitle,
   isCurrentPagePlayurl,
 } from '../modules/detector/bilibili'
+import { startCropSession, stopCropSession } from './cropSession'
 import { MessageType, type DetectScanPayload, type ExtensionMessage } from '../shared/messages'
 import { scanDom } from '../modules/detector'
 import { applyPlaybackRate, setupOverlay } from '../modules/playback'
@@ -49,6 +50,19 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
     const result = applyPlaybackRate(Number.isFinite(rate) ? rate : 1)
     sendResponse(result)
     return true
+  }
+  if (message?.type === MessageType.RECORD_PREPARE_CROP) {
+    const taskId = (message.payload as { taskId?: string } | undefined)?.taskId
+    if (!taskId) {
+      sendResponse({ ok: false, error: '任务无效' })
+      return
+    }
+    void startCropSession(taskId).then(sendResponse)
+    return true
+  }
+  if (message?.type === MessageType.RECORD_STOP_CROP) {
+    stopCropSession()
+    sendResponse({ ok: true })
   }
 })
 

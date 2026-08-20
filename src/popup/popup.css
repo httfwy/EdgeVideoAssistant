@@ -233,6 +233,16 @@ body {
   font-size: var(--font-assist);
 }
 
+.record-crop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 var(--space-1);
+  color: var(--color-secondary);
+  font-size: var(--font-assist);
+  cursor: pointer;
+}
+
 .live-segment {
   margin-left: auto;
 }
