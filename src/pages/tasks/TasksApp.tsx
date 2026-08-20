@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { downloadStatusLabel, formatDownloadProgress } from '../../modules/downloader/format'
-import { STORAGE_KEYS } from '../../shared/constants'
+import { DETECTED_KEY_PREFIX, STORAGE_KEYS } from '../../shared/constants'
 import {
   MessageType,
   sendMessage,
@@ -93,7 +93,8 @@ function TasksApp() {
         changes[STORAGE_KEYS.downloadTasks] ||
         changes[STORAGE_KEYS.recordTasks] ||
         changes[STORAGE_KEYS.history] ||
-        changes[STORAGE_KEYS.activeRecord]
+        changes[STORAGE_KEYS.activeRecord] ||
+        Object.keys(changes).some((key) => key.startsWith(DETECTED_KEY_PREFIX))
       ) {
         void refresh()
       }

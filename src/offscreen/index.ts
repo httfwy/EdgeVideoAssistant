@@ -1,7 +1,10 @@
-import { MessageType, type ExtensionMessage, type RecordStatePayload } from '../shared/messages'
+import { saveObjectUrl } from '../modules/downloader/saveBlob'
+import { runFetchSave } from '../modules/downloader/fetchSave'
+import { MessageType, type ExtensionMessage, type FetchSavePayload, type RecordStatePayload } from '../shared/messages'
 import {
   abortHlsSession,
   abortLiveSession,
+  hasLiveSession,
   pauseHlsSession,
   pauseLiveSession,
   resumeLiveSession,
@@ -53,6 +56,7 @@ interface RecSession {
 }
 
 let recSession: RecSession | null = null
+let stoppingTaskId: string | null = null
 
 function reportHls(update: HlsProgressUpdate) {
   void chrome.runtime.sendMessage(
@@ -201,32 +205,81 @@ function resumeRecorder() {
   }
 }
 
+function stopTracks(stream: MediaStream) {
+  stream.getTracks().forEach((track) => {
+    try {
+      track.stop()
+    } catch {
+      // 轨道可能已结束
+    }
+  })
+}
+
+function fallbackAnchorDownload(url: string, filename: string) {
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+}
+
+async function collectRecorderBlob(session: RecSession): Promise<Blob> {
+  if (session.recorder.state === 'inactive') {
+    return new Blob(session.chunks, { type: 'video/webm' })
+  }
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => {
+      resolve(new Blob(session.chunks, { type: 'video/webm' }))
+    }, 3000)
+    session.recorder.onstop = () => {
+      window.clearTimeout(timer)
+      resolve(new Blob(session.chunks, { type: 'video/webm' }))
+    }
+    try {
+      session.recorder.stop()
+    } catch {
+      window.clearTimeout(timer)
+      resolve(new Blob(session.chunks, { type: 'video/webm' }))
+    }
+  })
+}
+
 async function stopRecorder(): Promise<void> {
   const session = recSession
   if (!session) {
     return
   }
-  window.clearInterval(session.timer)
-  const blob = await new Promise<Blob>((resolve) => {
-    session.recorder.onstop = () => {
-      resolve(new Blob(session.chunks, { type: 'video/webm' }))
-    }
-    if (session.recorder.state !== 'inactive') {
-      session.recorder.stop()
-    } else {
-      resolve(new Blob(session.chunks, { type: 'video/webm' }))
-    }
-  })
-  session.stream.getTracks().forEach((track) => track.stop())
   recSession = null
-  const objectUrl = URL.createObjectURL(blob)
+  window.clearInterval(session.timer)
+
+  let blob = new Blob(session.chunks, { type: 'video/webm' })
   try {
-    const downloadId = await chrome.downloads.download({
-      url: objectUrl,
-      filename: session.filename,
-      conflictAction: 'uniquify',
-      saveAs: false,
+    blob = await collectRecorderBlob(session)
+  } catch {
+    blob = new Blob(session.chunks, { type: 'video/webm' })
+  }
+  stopTracks(session.stream)
+
+  if (!blob.size) {
+    reportRecord({
+      taskId: session.taskId,
+      status: 'failed',
+      elapsedMs: Math.max(0, elapsedOf(session)),
+      error: '没有可保存的内容',
     })
+    return
+  }
+
+  const objectUrl = URL.createObjectURL(blob)
+  let keepUrl = false
+  try {
+    let downloadId: number | undefined
+    try {
+      downloadId = await saveObjectUrl(objectUrl, session.filename)
+    } catch {
+      fallbackAnchorDownload(objectUrl, session.filename)
+      keepUrl = true
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+    }
     reportRecord({
       taskId: session.taskId,
       status: 'completed',
@@ -234,12 +287,69 @@ async function stopRecorder(): Promise<void> {
       estimatedSizeBytes: blob.size,
       chromeDownloadId: downloadId,
     })
+  } catch (error: unknown) {
+    reportRecord({
+      taskId: session.taskId,
+      status: 'failed',
+      elapsedMs: Math.max(0, elapsedOf(session)),
+      estimatedSizeBytes: blob.size,
+      error: error instanceof Error ? error.message : '保存失败',
+    })
   } finally {
-    URL.revokeObjectURL(objectUrl)
+    if (!keepUrl) {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }
+}
+
+function endMissingRecord(taskId: string) {
+  if (hasLiveSession(taskId)) {
+    abortLiveSession(taskId)
+    return
+  }
+  reportRecord({
+    taskId,
+    status: 'failed',
+    elapsedMs: 0,
+    error: '录制已中断',
+  })
+}
+
+async function waitWhile(condition: () => boolean, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs
+  while (condition() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+}
+
+async function handleStop(taskId: string): Promise<void> {
+  if (stoppingTaskId === taskId && !recSession) {
+    await waitWhile(() => stoppingTaskId === taskId, 15_000)
+    return
+  }
+  stoppingTaskId = taskId
+  try {
+    if (recSession) {
+      await stopRecorder()
+      return
+    }
+    if (hasLiveSession(taskId)) {
+      abortLiveSession(taskId)
+      await waitWhile(() => hasLiveSession(taskId), 15_000)
+      return
+    }
+    endMissingRecord(taskId)
+  } finally {
+    if (stoppingTaskId === taskId) {
+      stoppingTaskId = null
+    }
   }
 }
 
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
+  if (message.target !== 'offscreen') {
+    return
+  }
   if (message.type === MessageType.HLS_PAUSE) {
     const taskId = (message.payload as { taskId?: string } | undefined)?.taskId
     if (taskId) {
@@ -288,6 +398,17 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
       sendResponse({ ok: false, error: '任务无效' })
       return
     }
+    if (payload.action === 'stop') {
+      void handleStop(payload.taskId)
+        .then(() => sendResponse({ ok: true }))
+        .catch((error: unknown) => {
+          sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : '保存失败',
+          })
+        })
+      return true
+    }
     sendResponse({ ok: true })
     if (payload.action === 'start') {
       void startRecorder(payload).catch((error: unknown) => {
@@ -300,23 +421,47 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
       })
       return
     }
-    if (payload.mode === 'live' || !recSession) {
-      if (payload.action === 'pause') {
+    if (payload.action === 'pause') {
+      if (recSession) {
+        pauseRecorder()
+      } else {
         pauseLiveSession(payload.taskId)
-      } else if (payload.action === 'resume') {
-        resumeLiveSession(payload.taskId)
-      } else if (payload.action === 'stop') {
-        abortLiveSession(payload.taskId)
       }
       return
     }
-    if (payload.action === 'pause') {
-      pauseRecorder()
-    } else if (payload.action === 'resume') {
-      resumeRecorder()
-    } else if (payload.action === 'stop') {
-      void stopRecorder()
+    if (payload.action === 'resume') {
+      if (recSession) {
+        resumeRecorder()
+      } else {
+        resumeLiveSession(payload.taskId)
+      }
     }
+    return
+  }
+
+  if (message.type === MessageType.FETCH_SAVE) {
+    const payload = message.payload as FetchSavePayload | undefined
+    if (!payload?.taskId || !payload.url || !payload.filename) {
+      sendResponse({ ok: false, error: '任务无效' })
+      return
+    }
+    sendResponse({ ok: true })
+    void runFetchSave(payload).catch((error: unknown) => {
+      void chrome.runtime.sendMessage(
+        {
+          type: MessageType.FETCH_PROGRESS,
+          payload: {
+            taskId: payload.taskId,
+            status: 'failed',
+            progress: 0,
+            error: error instanceof Error ? error.message : '下载失败',
+          },
+        },
+        () => {
+          void chrome.runtime.lastError
+        },
+      )
+    })
     return
   }
 

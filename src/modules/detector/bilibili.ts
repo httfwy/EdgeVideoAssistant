@@ -3,7 +3,96 @@ import { DRM_UNSUPPORTED_REASON, draftFromUrl, type MediaDraft } from './classif
 const PLAYURL_HINT = /playurl|pgc\/player|dash/i
 const BILI_HOST = /bilibili\.com|bilivideo\.com/i
 
-export const PAGE_MEDIA_EVENT = 'EVA_PAGE_MEDIA'
+export function extractBvid(url: string): string | undefined {
+  const fromPath = url.match(/\/video\/(BV[0-9A-Za-z]+)/i)
+  if (fromPath) {
+    return fromPath[1]
+  }
+  try {
+    return new URL(url).searchParams.get('bvid') ?? undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function extractAid(url: string): string | undefined {
+  const fromPath = url.match(/\/video\/av(\d+)/i)
+  if (fromPath) {
+    return fromPath[1]
+  }
+  try {
+    return new URL(url).searchParams.get('aid') ?? undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function extractEpid(url: string): string | undefined {
+  const fromPath = url.match(/\/bangumi\/play\/ep(\d+)/i)
+  if (fromPath) {
+    return fromPath[1]
+  }
+  try {
+    const parsed = new URL(url)
+    return parsed.searchParams.get('ep_id') ?? parsed.searchParams.get('epId') ?? undefined
+  } catch {
+    return undefined
+  }
+}
+
+function idFromJson(data: unknown, key: string): string | undefined {
+  const root = asRecord(data)
+  const node = asRecord(root?.data) ?? asRecord(root?.result) ?? root
+  const value = node?.[key] ?? root?.[key]
+  if (value === undefined || value === null || value === '') {
+    return undefined
+  }
+  return String(value)
+}
+
+export function isBiliWatchPage(url?: string): boolean {
+  if (!url) {
+    return false
+  }
+  return /bilibili\.com\/(video|bangumi|cheese)\//i.test(url)
+}
+
+/** 只保留当前正在观看的稿件，忽略「接下来播放」预加载的 playurl */
+export function isCurrentPagePlayurl(requestUrl: string, pageUrl: string, data?: unknown): boolean {
+  const pageBvid = extractBvid(pageUrl)
+  const reqBvid = extractBvid(requestUrl) ?? idFromJson(data, 'bvid')
+  if (pageBvid && reqBvid) {
+    return pageBvid.toLowerCase() === reqBvid.toLowerCase()
+  }
+
+  const pageEpid = extractEpid(pageUrl)
+  const reqEpid = extractEpid(requestUrl) ?? idFromJson(data, 'ep_id') ?? idFromJson(data, 'epid')
+  if (pageEpid && reqEpid) {
+    return pageEpid === reqEpid
+  }
+
+  const pageAid = extractAid(pageUrl)
+  const reqAid = extractAid(requestUrl) ?? idFromJson(data, 'aid')
+  if (pageAid && reqAid) {
+    return pageAid === reqAid
+  }
+
+  if (pageBvid || pageEpid || pageAid) {
+    return !reqBvid && !reqEpid && !reqAid
+  }
+  return true
+}
+
+export function formatBiliDraftTitle(pageTitle?: string, quality?: string): string | undefined {
+  const base = (pageTitle || '')
+    .replace(/[_-]?哔哩哔哩.*$/u, '')
+    .replace(/\s*[-_]\s*bilibili.*$/iu, '')
+    .trim()
+  if (quality && base) {
+    return `${base} · ${quality}`
+  }
+  return quality || base || undefined
+}
 
 interface RawStream {
   url?: string
@@ -19,11 +108,27 @@ interface RawStream {
   id_str?: string
 }
 
-function firstUrl(item: RawStream | undefined): string | undefined {
+function streamUrls(item: RawStream | undefined): string[] {
   if (!item) {
-    return undefined
+    return []
   }
-  return item.baseUrl || item.base_url || item.url || item.backupUrl?.[0] || item.backup_url?.[0]
+  const raw = [
+    item.baseUrl,
+    item.base_url,
+    item.url,
+    ...(Array.isArray(item.backupUrl) ? item.backupUrl : []),
+    ...(Array.isArray(item.backup_url) ? item.backup_url : []),
+  ]
+  const urls: string[] = []
+  const seen = new Set<string>()
+  for (const value of raw) {
+    if (!value || seen.has(value)) {
+      continue
+    }
+    seen.add(value)
+    urls.push(value)
+  }
+  return urls
 }
 
 function looksEncrypted(data: unknown): boolean {
@@ -83,8 +188,8 @@ export function draftsFromPlayurlJson(data: unknown, pageUrl?: string): MediaDra
   const drafts: MediaDraft[] = []
   const seen = new Set<string>()
 
-  const push = (url: string | undefined, quality?: string, audio = false) => {
-    const draft = draftFromUrl(url ?? '')
+  const push = (urls: string[], quality?: string, audio = false) => {
+    const draft = draftFromUrl(urls[0] ?? '')
     if (!draft || seen.has(draft.url)) {
       return
     }
@@ -95,6 +200,7 @@ export function draftsFromPlayurlJson(data: unknown, pageUrl?: string): MediaDra
       needsParse: false,
       canDirectDownload: true,
       quality: quality ? (audio ? `音频 ${quality}` : quality) : audio ? '音频' : undefined,
+      backupUrls: urls.slice(1),
     })
   }
 
@@ -103,15 +209,15 @@ export function draftsFromPlayurlJson(data: unknown, pageUrl?: string): MediaDra
     const audios = Array.isArray(dash.audio) ? (dash.audio as RawStream[]) : []
     for (const item of videos) {
       const label = item.height ? `${item.height}p` : item.id != null ? String(item.id) : undefined
-      push(firstUrl(item), label, false)
+      push(streamUrls(item), label, false)
     }
     for (const item of audios) {
-      push(firstUrl(item), item.id != null ? String(item.id) : undefined, true)
+      push(streamUrls(item), item.id != null ? String(item.id) : undefined, true)
     }
   }
 
   for (const item of durlList(root)) {
-    push(firstUrl(item))
+    push(streamUrls(item))
   }
 
   return drafts
@@ -126,11 +232,31 @@ export function isBilibiliMedia(url: string): boolean {
     const parsed = new URL(url)
     const host = parsed.hostname
     const path = parsed.pathname.toLowerCase()
-    if (host.includes('bilivideo.com') || host.includes('bilibili.com')) {
-      return path.endsWith('.m4s') || path.endsWith('.mp4') || path.endsWith('.m4s/') || path.includes('.m4s')
+    if (host.includes('bilivideo.com') || host.includes('bilivideo.cn') || host.includes('bilibili.com') || host.includes('akamaized.net') || host.includes('hdslb.com')) {
+      return /\.(m4s|mp4|flv|m4a)(\/|$)/i.test(path) || path.includes('.m4s')
     }
-    return path.endsWith('.m4s')
+    return path.endsWith('.m4s') || path.includes('.m4s')
   } catch {
     return false
   }
+}
+
+/** CDN 防盗链：必须带页面 Referer 拉取原始编码文件，不能走浏览器直接下载 */
+export function needsReferrerFetch(url: string): boolean {
+  return isBilibiliMedia(url)
+}
+
+export function defaultReferrerFor(url: string, pageUrl?: string): string {
+  if (pageUrl) {
+    return pageUrl
+  }
+  try {
+    const host = new URL(url).hostname
+    if (host.includes('bilibili') || host.includes('bilivideo') || host.includes('akamaized') || host.includes('hdslb')) {
+      return 'https://www.bilibili.com/'
+    }
+  } catch {
+    // 保持原 URL 作为 referrer
+  }
+  return url
 }

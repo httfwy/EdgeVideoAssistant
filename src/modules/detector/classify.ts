@@ -16,6 +16,7 @@ export interface MediaDraft {
   quality?: string
   isLive?: boolean
   title?: string
+  backupUrls?: string[]
 }
 
 /** 去掉 hash；非 http(s) 或 blob/data 返回 null */

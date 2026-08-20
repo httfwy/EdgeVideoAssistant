@@ -13,7 +13,17 @@
       "128": "icons/icon128.png"
     }
   },
-  "permissions": ["storage", "scripting", "tabs", "webRequest", "downloads", "notifications", "offscreen", "tabCapture"],
+  "permissions": [
+    "storage",
+    "scripting",
+    "tabs",
+    "webRequest",
+    "downloads",
+    "notifications",
+    "offscreen",
+    "tabCapture",
+    "declarativeNetRequestWithHostAccess"
+  ],
   "host_permissions": ["http://*/*", "https://*/*"],
   "options_page": "src/pages/options/index.html",
   "background": {

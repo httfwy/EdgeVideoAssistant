@@ -2,10 +2,10 @@ import type { DownloadTask } from '../../shared/types'
 
 /** 直链百分比或 HLS 分片进度 */
 export function formatDownloadProgress(task: DownloadTask): string {
+  if (task.status === 'merging') {
+    return task.kind === 'hls' ? '合并中' : '封装中'
+  }
   if (task.kind === 'hls') {
-    if (task.status === 'merging') {
-      return '合并中'
-    }
     if (task.segmentTotal) {
       return `分片 ${task.segmentCurrent ?? 0}/${task.segmentTotal}`
     }

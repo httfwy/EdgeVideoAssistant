@@ -1,7 +1,7 @@
 import { MessageType, type RecordControlPayload, type RecordStatePayload } from '../../shared/messages'
 import { appendHistory, getActiveRecord, getSettings, setActiveRecord } from '../../shared/storage'
 import { sendToOffscreen } from '../downloader/offscreen'
-import { createRecordTask, patchRecordTask, upsertRecordTask } from './tasks'
+import { createRecordTask, getRecordTask, patchRecordTask, upsertRecordTask } from './tasks'
 
 export const CAPTURE_DENIED = '请允许标签页捕获后重试'
 
@@ -11,6 +11,11 @@ function fileBase(mode: string): string {
 }
 
 export async function applyRecordState(update: RecordStatePayload): Promise<void> {
+  const current = await getRecordTask(update.taskId)
+  if (current?.status === 'completed' && update.status === 'failed') {
+    return
+  }
+
   const patched = await patchRecordTask(update.taskId, {
     status: update.status === 'recording' || update.status === 'paused' ? update.status : update.status,
     durationMs: update.elapsedMs,
@@ -64,7 +69,11 @@ export async function controlRecord(payload: RecordControlPayload): Promise<void
   if (payload.action === 'start') {
     const existing = await getActiveRecord()
     if (existing) {
-      throw new Error('已有录制进行中')
+      const existingTask = await getRecordTask(existing.taskId)
+      if (existingTask && (existingTask.status === 'recording' || existingTask.status === 'paused')) {
+        throw new Error('已有录制进行中')
+      }
+      await setActiveRecord(null)
     }
     const mode = payload.mode === 'live' && !payload.url ? 'tab' : (payload.mode ?? 'tab')
     const task = createRecordTask({ name: payload.name || fileBase(mode), mode })
@@ -134,6 +143,21 @@ export async function controlRecord(payload: RecordControlPayload): Promise<void
     return
   }
   if (payload.action === 'stop') {
-    await sendToOffscreen(MessageType.RECORD_CONTROL, { action: 'stop', taskId })
+    try {
+      await sendToOffscreen(MessageType.RECORD_CONTROL, {
+        action: 'stop',
+        taskId,
+        mode: payload.mode ?? active?.mode,
+      })
+    } catch {
+      await applyRecordState({
+        taskId,
+        status: 'failed',
+        elapsedMs: active?.elapsedMs ?? 0,
+        error: '录制已中断',
+      })
+      return
+    }
+    await setActiveRecord(null)
   }
 }

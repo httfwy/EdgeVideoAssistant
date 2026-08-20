@@ -7,7 +7,12 @@ export interface DetectScanPayload {
   pageTitle?: string
   pageUrl?: string
   tabId?: number
+  /** 用当前稿件的 playurl 结果替换已缓存的 B 站媒体，去掉「接下来播放」预加载 */
+  replaceBili?: boolean
 }
+
+/** 拉流后封装：仅视频、仅音频、音视频合并，或保留文件内全部轨道 */
+export type FetchOutputMode = 'video' | 'audio' | 'mux' | 'file'
 
 export interface DownloadStartPayload {
   url: string
@@ -19,6 +24,11 @@ export interface DownloadStartPayload {
   /** 选定的 media playlist 或轨道地址 */
   mediaUrl?: string
   quality?: string
+  referrer?: string
+  backupUrls?: string[]
+  outputMode?: FetchOutputMode
+  audioUrl?: string
+  audioBackupUrls?: string[]
 }
 
 export interface ParseStreamPayload {
@@ -91,6 +101,11 @@ export const MessageType = {
   SET_PLAYBACK_RATE: 'SET_PLAYBACK_RATE',
   HLS_LIVE_START: 'HLS_LIVE_START',
   PAGE_MEDIA: 'PAGE_MEDIA',
+  /** Offscreen 无 chrome.downloads，委托 Service Worker 保存 Blob */
+  SAVE_BLOB: 'SAVE_BLOB',
+  /** Offscreen 带 Referer 拉取原始媒体文件 */
+  FETCH_SAVE: 'FETCH_SAVE',
+  FETCH_PROGRESS: 'FETCH_PROGRESS',
 } as const
 
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType]
@@ -98,6 +113,8 @@ export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType]
 export interface ExtensionMessage<T = unknown> {
   type: string
   payload?: T
+  /** 仅 Service Worker → Offscreen 的命令带此标记，避免 Popup 消息被 Offscreen 误回「任务无效」 */
+  target?: 'offscreen'
 }
 
 export interface OkResponse {
@@ -117,11 +134,40 @@ export interface SettingsResponse extends OkResponse {
   settings: Settings
 }
 
+export interface SaveBlobPayload {
+  url: string
+  filename: string
+}
+
+export interface SaveBlobResponse extends OkResponse {
+  downloadId: number
+}
+
+export interface FetchSavePayload {
+  taskId: string
+  url: string
+  filename: string
+  referrer?: string
+  backupUrls?: string[]
+  outputMode?: FetchOutputMode
+  audioUrl?: string
+  audioBackupUrls?: string[]
+}
+
+export interface FetchProgressUpdate {
+  taskId: string
+  status: 'downloading' | 'merging' | 'completed' | 'failed'
+  progress: number
+  chromeDownloadId?: number
+  error?: string
+}
+
 export type MessageResponse =
   | OkResponse
   | ErrorResponse
   | SnapshotResponse
   | SettingsResponse
+  | SaveBlobResponse
 
 /** 已知但本步尚未实现的功能统一返回此文案 */
 export const UNIMPLEMENTED_ERROR = '未实现'

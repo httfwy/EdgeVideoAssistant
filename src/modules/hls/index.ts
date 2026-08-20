@@ -13,6 +13,7 @@ export {
 } from './download'
 export {
   abortLiveSession,
+  hasLiveSession,
   pauseLiveSession,
   resumeLiveSession,
   runHlsLive,

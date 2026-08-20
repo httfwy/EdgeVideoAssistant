@@ -16,20 +16,51 @@ function sanitizeSegment(name: string): string {
   return cleaned || 'video'
 }
 
-function ensureExtension(name: string, kind?: MediaKind): string {
-  if (/\.(mp4|webm|mov|avi|mkv|ts)$/i.test(name)) {
+function extensionFromUrl(url: string): string | undefined {
+  try {
+    const path = new URL(url).pathname
+    const match = path.match(/\.(m4s|mp4|webm|mov|avi|mkv|ts|flv|m4a)(?:\/|$)/i)
+    return match ? `.${match[1].toLowerCase()}` : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function ensureExtension(name: string, kind?: MediaKind, url?: string): string {
+  if (/\.(mp4|webm|mov|avi|mkv|ts|m4s|flv|m4a)$/i.test(name)) {
     return name
+  }
+  const fromUrl = url ? extensionFromUrl(url) : undefined
+  if (fromUrl) {
+    return `${name}${fromUrl}`
   }
   const ext = (kind && EXT_BY_KIND[kind]) || '.mp4'
   return `${name}${ext}`
 }
 
-/** 生成可交给 chrome.downloads 的文件名（不含目录） */
-export function suggestDownloadFilename(url: string, fallbackName?: string, kind?: MediaKind): string {
+function withForcedExt(name: string, forceExt: string): string {
+  const ext = forceExt.startsWith('.') ? forceExt : `.${forceExt}`
+  return `${name}${ext}`
+}
+
+/** 生成可交给 chrome.downloads 的文件名（不含目录）；forceExt 用于封装后的 MP4 / M4A */
+export function suggestDownloadFilename(
+  url: string,
+  fallbackName?: string,
+  kind?: MediaKind,
+  forceExt?: string,
+): string {
   const raw = (fallbackName && fallbackName.trim()) || filenameFromUrl(url)
-  const stripped = raw.replace(/\.(m3u8|mpd)$/i, '')
+  const namedExt = raw.match(/\.(mp4|webm|mov|avi|mkv|ts|m4s|flv|m4a)$/i)
+  const stripped = raw.replace(/\.(m3u8|mpd|m4s|mp4|webm|mov|avi|mkv|ts|flv|m4a)$/i, '')
   const base = sanitizeSegment(stripped.split(/[/\\]/).pop() ?? stripped).slice(0, 120)
-  return ensureExtension(base, kind)
+  if (forceExt) {
+    return withForcedExt(base, forceExt)
+  }
+  if (namedExt) {
+    return `${base}${namedExt[0].toLowerCase()}`
+  }
+  return ensureExtension(base, kind, url)
 }
 
 export const DIRECT_KINDS: MediaKind[] = ['mp4', 'webm', 'mov', 'avi']

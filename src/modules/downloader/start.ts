@@ -1,8 +1,11 @@
 import { classifyKind } from '../detector/classify'
+import { defaultReferrerFor, needsReferrerFetch } from '../detector/bilibili'
 import { appendHistory, getDownloadTasks, getSettings } from '../../shared/storage'
+import type { FetchOutputMode } from '../../shared/messages'
 import type { DownloadKind, DownloadTask, MediaKind } from '../../shared/types'
 import { isDirectKind, suggestDownloadFilename } from './filename'
-import { startOffscreenHls } from './offscreen'
+import { startOffscreenFetch, startOffscreenHls } from './offscreen'
+import { ensureBiliReferrerRules } from './biliRules'
 import { RECORD_FALLBACK } from './parseStream'
 import { createDownloadTask, findInProgressByUrl, getDownloadTask, patchDownloadTask, upsertDownloadTask } from './tasks'
 
@@ -14,6 +17,11 @@ export interface DownloadStartInput {
   canDirectDownload?: boolean
   mediaUrl?: string
   quality?: string
+  referrer?: string
+  backupUrls?: string[]
+  outputMode?: FetchOutputMode
+  audioUrl?: string
+  audioBackupUrls?: string[]
 }
 
 export const DOWNLOAD_NOT_DIRECT = '未实现'
@@ -178,6 +186,97 @@ export async function startHlsDownload(input: DownloadStartInput): Promise<Downl
   return (await patchDownloadTask(task.id, { status: 'downloading' })) ?? task
 }
 
+function pathHasM4s(url: string): boolean {
+  try {
+    return new URL(url).pathname.toLowerCase().includes('.m4s')
+  } catch {
+    return false
+  }
+}
+
+function inferOutputMode(input: DownloadStartInput, target: string): FetchOutputMode {
+  if (input.outputMode) {
+    return input.outputMode
+  }
+  if (input.audioUrl) {
+    return 'mux'
+  }
+  if (input.quality?.startsWith('音频')) {
+    return 'audio'
+  }
+  if (pathHasM4s(target)) {
+    return 'video'
+  }
+  return 'file'
+}
+
+function outputExtension(mode: FetchOutputMode): string {
+  return mode === 'audio' ? '.m4a' : '.mp4'
+}
+
+function outputKind(mode: FetchOutputMode): DownloadKind {
+  return mode === 'mux' ? 'dash' : 'direct'
+}
+
+function displayNameFor(input: DownloadStartInput, mode: FetchOutputMode): string {
+  const base = input.name?.trim() || ''
+  if (mode === 'mux') {
+    return base || 'video'
+  }
+  if (input.quality) {
+    return `${base} ${input.quality}`.trim()
+  }
+  return base
+}
+
+/** 带页面 Referer 拉流，再封装为可播放 MP4 / M4A */
+export async function startReferrerDownload(input: DownloadStartInput): Promise<DownloadTask> {
+  const target = input.mediaUrl || input.url
+  const mode = inferOutputMode(input, target)
+  const displayName = displayNameFor(input, mode)
+  const taskUrl = mode === 'mux' ? `${target}#eva-mux` : target
+  const filename = suggestDownloadFilename(target, displayName, 'mp4', outputExtension(mode))
+  const { task } = await prepareTask(
+    { ...input, url: taskUrl, name: filename },
+    outputKind(mode),
+    'mp4',
+  )
+  if (task.status === 'downloading' || task.status === 'merging') {
+    return task
+  }
+
+  await patchDownloadTask(task.id, {
+    name: filename,
+    status: 'downloading',
+    error: undefined,
+    progress: 0,
+  })
+
+  await ensureBiliReferrerRules()
+
+  try {
+    await startOffscreenFetch({
+      taskId: task.id,
+      url: target,
+      filename,
+      referrer: defaultReferrerFor(target, input.referrer),
+      backupUrls: input.backupUrls,
+      outputMode: mode,
+      audioUrl: input.audioUrl,
+      audioBackupUrls: input.audioBackupUrls,
+    })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '下载失败'
+    const updated = await patchDownloadTask(task.id, { status: 'failed', error: message })
+    if (updated) {
+      return updated
+    }
+    throw new Error(message)
+  }
+
+  return (await patchDownloadTask(task.id, { status: 'downloading' })) ?? task
+}
+
 export async function startDownload(input: DownloadStartInput): Promise<DownloadTask> {
   let parsed: URL
   try {
@@ -190,6 +289,15 @@ export async function startDownload(input: DownloadStartInput): Promise<Download
   }
 
   const kind = input.kind ?? classifyKind(input.url)
+  const target = input.mediaUrl || input.url
+  if (
+    input.outputMode === 'video' ||
+    input.outputMode === 'audio' ||
+    input.outputMode === 'mux' ||
+    needsReferrerFetch(target)
+  ) {
+    return startReferrerDownload(input)
+  }
   if (kind === 'hls') {
     return startHlsDownload(input)
   }

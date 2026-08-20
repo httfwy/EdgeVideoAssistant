@@ -1,2 +1,1 @@
-/** 预留：格式转换 / 压缩。本版本不实现。 */
-export {}
+export { remuxToMp4, type RemuxMode } from './remux'

@@ -26,6 +26,7 @@ export function draftToResource(
     needsParse: draft.needsParse,
     canDirectDownload: draft.canDirectDownload,
     unsupportedReason: draft.unsupportedReason,
+    backupUrls: draft.backupUrls,
     detectedAt: Date.now(),
   }
 }
@@ -47,6 +48,10 @@ function pickPreferred(current: VideoResource, incoming: VideoResource): VideoRe
     tracks: incoming.tracks?.length ? incoming.tracks : current.tracks,
     parsed: incoming.parsed || current.parsed,
     kind: incoming.kind !== 'unknown' ? incoming.kind : current.kind,
+    backupUrls:
+      incoming.backupUrls?.length || current.backupUrls?.length
+        ? [...new Set([...(current.backupUrls ?? []), ...(incoming.backupUrls ?? [])])]
+        : undefined,
     detectedAt: Math.min(current.detectedAt, incoming.detectedAt),
   }
 }

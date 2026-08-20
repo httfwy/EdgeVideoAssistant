@@ -1,4 +1,8 @@
-import { draftsFromPlayurlJson } from '../modules/detector/bilibili'
+import {
+  draftsFromPlayurlJson,
+  formatBiliDraftTitle,
+  isCurrentPagePlayurl,
+} from '../modules/detector/bilibili'
 import { MessageType, type DetectScanPayload, type ExtensionMessage } from '../shared/messages'
 import { scanDom } from '../modules/detector'
 import { applyPlaybackRate, setupOverlay } from '../modules/playback'
@@ -36,6 +40,7 @@ function scheduleReport() {
 
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
   if (message?.type === MessageType.DETECT_REFRESH) {
+    window.postMessage({ source: 'eva-request-playinfo' }, '*')
     sendResponse({ ok: true, ...collect() })
     return
   }
@@ -51,11 +56,18 @@ window.addEventListener('message', (event: MessageEvent) => {
   if (event.source !== window) {
     return
   }
-  const data = event.data as { source?: string; data?: unknown } | undefined
+  const data = event.data as { source?: string; url?: string; data?: unknown } | undefined
   if (data?.source !== 'eva-page-media') {
     return
   }
-  const items = draftsFromPlayurlJson(data.data, location.href)
+  const requestUrl = data.url || location.href
+  if (!isCurrentPagePlayurl(requestUrl, location.href, data.data)) {
+    return
+  }
+  const items = draftsFromPlayurlJson(data.data, location.href).map((item) => ({
+    ...item,
+    title: formatBiliDraftTitle(document.title, item.quality) || item.title,
+  }))
   if (!items.length) {
     return
   }
@@ -63,6 +75,7 @@ window.addEventListener('message', (event: MessageEvent) => {
     items,
     pageTitle: document.title,
     pageUrl: location.href,
+    replaceBili: true,
   })
 })
 

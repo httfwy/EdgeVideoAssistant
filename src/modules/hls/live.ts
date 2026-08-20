@@ -1,3 +1,4 @@
+import { saveObjectUrl } from '../downloader/saveBlob'
 import {
   CORS_SEGMENT_ERROR,
   ENCRYPTED_STREAM_ERROR,
@@ -50,6 +51,10 @@ export function abortLiveSession(taskId: string) {
   }
 }
 
+export function hasLiveSession(taskId: string): boolean {
+  return lives.has(taskId)
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -73,14 +78,9 @@ async function savePart(
   const blob = new Blob(buffers, { type: 'video/mp2t' })
   const objectUrl = URL.createObjectURL(blob)
   try {
-    return await chrome.downloads.download({
-      url: objectUrl,
-      filename,
-      conflictAction: 'uniquify',
-      saveAs: false,
-    })
+    return await saveObjectUrl(objectUrl, filename)
   } finally {
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+    URL.revokeObjectURL(objectUrl)
   }
 }
 

@@ -3,8 +3,8 @@ import Footer from './components/Footer'
 import Header from './components/Header'
 import RecordSection from './components/RecordSection'
 import SpeedChips from './components/SpeedChips'
-import VideoList from './components/VideoList'
-import { STORAGE_KEYS } from '../shared/constants'
+import VideoList, { type DownloadOptions } from './components/VideoList'
+import { DETECTED_KEY_PREFIX, STORAGE_KEYS } from '../shared/constants'
 import { MessageType, sendMessage, type MessageResponse } from '../shared/messages'
 import type { Snapshot, VideoResource } from '../shared/types'
 
@@ -14,7 +14,10 @@ const OPTIONS_PAGE = 'src/pages/options/index.html'
 function countInProgress(snapshot: Snapshot): number {
   const downloads = snapshot.downloadTasks.filter(
     (task) =>
-      task.status === 'waiting' || task.status === 'downloading' || task.status === 'merging',
+      task.status === 'waiting' ||
+      task.status === 'downloading' ||
+      task.status === 'merging' ||
+      task.status === 'paused',
   ).length
   const records = snapshot.recordTasks.filter(
     (task) => task.status === 'recording' || task.status === 'paused',
@@ -117,7 +120,8 @@ function App() {
         changes[STORAGE_KEYS.settings] ||
         changes[STORAGE_KEYS.recordTasks] ||
         changes[STORAGE_KEYS.activeRecord] ||
-        changes[STORAGE_KEYS.history]
+        changes[STORAGE_KEYS.history] ||
+        Object.keys(changes).some((key) => key.startsWith(DETECTED_KEY_PREFIX))
       ) {
         void refreshSnapshot()
       }
@@ -136,24 +140,28 @@ function App() {
     void runDetect()
   }
 
-  async function handleDownload(
-    resource: VideoResource,
-    options?: { taskId?: string; mediaUrl?: string; quality?: string },
-  ) {
+  async function handleDownload(resource: VideoResource, options?: DownloadOptions) {
     if (pendingUrl) {
       return
     }
-    setPendingUrl(options?.mediaUrl || resource.url)
+    const mediaUrl = options?.mediaUrl || resource.url
+    const pendingKey = options?.outputMode === 'mux' ? `${mediaUrl}#eva-mux` : mediaUrl
+    setPendingUrl(pendingKey)
     try {
       const response = await sendMessage(MessageType.DOWNLOAD_START, {
         url: resource.url,
-        name: resource.title,
+        name: options?.name ?? resource.title,
         resourceId: resource.id,
         taskId: options?.taskId,
         kind: resource.kind,
         canDirectDownload: resource.canDirectDownload,
         mediaUrl: options?.mediaUrl,
         quality: options?.quality,
+        referrer: resource.pageUrl,
+        backupUrls: options?.backupUrls ?? resource.backupUrls,
+        outputMode: options?.outputMode,
+        audioUrl: options?.audioUrl,
+        audioBackupUrls: options?.audioBackupUrls,
       })
       if (!response?.ok) {
         showToast(response && 'error' in response && response.error ? response.error : '下载失败')
@@ -204,16 +212,26 @@ function App() {
         action,
         mode: resolvedMode,
         tabId: tab?.id,
+        taskId: snapshot?.activeRecord?.taskId,
         url: resolvedMode === 'live' ? live?.url : undefined,
         name: resolvedMode === 'live' ? live?.title : undefined,
       })
       if (!response?.ok) {
         setRecordError(response && 'error' in response && response.error ? response.error : '录制失败')
+        await refreshSnapshot()
         return
       }
-      applySnapshot(response)
+      if ('snapshot' in response) {
+        applySnapshot(response)
+      } else {
+        await refreshSnapshot()
+      }
     } catch (err: unknown) {
-      setRecordError(err instanceof Error ? err.message : '请允许标签页捕获后重试')
+      const message = err instanceof Error ? err.message : '请允许标签页捕获后重试'
+      if (!/message port closed|receiving end does not exist/i.test(message)) {
+        setRecordError(message)
+      }
+      await refreshSnapshot()
     }
   }
 

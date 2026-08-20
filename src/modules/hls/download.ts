@@ -1,3 +1,4 @@
+import { saveObjectUrl } from '../downloader/saveBlob'
 import {
   CORS_SEGMENT_ERROR,
   ENCRYPTED_STREAM_ERROR,
@@ -54,33 +55,6 @@ async function fetchSegment(url: string, referrer: string): Promise<ArrayBuffer>
   }
 }
 
-async function waitForDownload(downloadId: number): Promise<void> {
-  const items = await chrome.downloads.search({ id: downloadId })
-  const current = items[0]?.state
-  if (current === 'complete') {
-    return
-  }
-  if (current === 'interrupted') {
-    throw new Error('下载失败')
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    function listener(delta: chrome.downloads.DownloadDelta) {
-      if (delta.id !== downloadId) {
-        return
-      }
-      if (delta.state?.current === 'complete') {
-        chrome.downloads.onChanged.removeListener(listener)
-        resolve()
-      } else if (delta.state?.current === 'interrupted') {
-        chrome.downloads.onChanged.removeListener(listener)
-        reject(new Error('下载失败'))
-      }
-    }
-    chrome.downloads.onChanged.addListener(listener)
-  })
-}
-
 /** 在 Offscreen 中逐片下载并拼接为 .ts */
 export async function runHlsDownload(
   taskId: string,
@@ -134,13 +108,7 @@ export async function runHlsDownload(
   const blob = new Blob(session.buffers, { type: 'video/mp2t' })
   const objectUrl = URL.createObjectURL(blob)
   try {
-    const downloadId = await chrome.downloads.download({
-      url: objectUrl,
-      filename,
-      conflictAction: 'uniquify',
-      saveAs: false,
-    })
-    await waitForDownload(downloadId)
+    const downloadId = await saveObjectUrl(objectUrl, filename)
     report({ taskId, phase: 'done', current: total, total, chromeDownloadId: downloadId })
   } finally {
     URL.revokeObjectURL(objectUrl)

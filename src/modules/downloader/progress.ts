@@ -19,7 +19,7 @@ export function registerDownloadListeners(): void {
 
 async function handleDownloadChanged(delta: chrome.downloads.DownloadDelta): Promise<void> {
   const task = await findTaskByDownloadId(delta.id)
-  if (!task) {
+  if (!task || task.status === 'completed' || task.status === 'failed') {
     return
   }
 

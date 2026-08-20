@@ -11,6 +11,8 @@ import {
   type PlaybackRatePayload,
   type RecordControlPayload,
   type RecordStatePayload,
+  type SaveBlobPayload,
+  type FetchProgressUpdate,
 } from '../shared/messages'
 import {
   ensureDefaultSettings,
@@ -23,11 +25,15 @@ import {
 } from '../shared/storage'
 import type { Settings, VideoResource } from '../shared/types'
 import { draftFromUrl, type MediaDraft } from '../modules/detector/classify'
+import { isBiliWatchPage, isBilibiliMedia } from '../modules/detector/bilibili'
 import { draftToResource, mergeResources } from '../modules/detector/merge'
 import {
   DOWNLOAD_NOT_DIRECT,
+  applyFetchProgress,
   applyHlsProgress,
   controlDownload,
+  ensureBiliReferrerRules,
+  handleSaveBlob,
   parseStream,
   registerDownloadListeners,
   startDownload,
@@ -71,10 +77,14 @@ async function upsertDrafts(
   drafts: MediaDraft[],
   pageTitle?: string,
   pageUrl?: string,
+  options?: { replaceBili?: boolean },
 ): Promise<VideoResource[]> {
   const incoming = drafts.map((draft) => draftToResource(draft, tabId, pageTitle, pageUrl))
   const existing = await getDetectedByTab(tabId)
-  const merged = mergeResources(existing, incoming)
+  const base = options?.replaceBili
+    ? existing.filter((item) => !isBilibiliMedia(item.url))
+    : existing
+  const merged = mergeResources(base, incoming)
   await setDetectedByTab(tabId, merged)
   return merged
 }
@@ -138,7 +148,9 @@ async function handleDetectResult(
   }
   const pageTitle = payload?.pageTitle ?? sender.tab?.title
   const pageUrl = payload?.pageUrl ?? sender.tab?.url
-  await upsertDrafts(tabId, payload?.items ?? [], pageTitle, pageUrl)
+  await upsertDrafts(tabId, payload?.items ?? [], pageTitle, pageUrl, {
+    replaceBili: payload?.replaceBili,
+  })
   return { ok: true }
 }
 
@@ -166,6 +178,10 @@ async function ingestWebRequest(details: chrome.webRequest.WebResponseHeadersDet
     pageUrl = tab.url
   } catch {
     pageTitle = undefined
+  }
+
+  if (isBiliWatchPage(pageUrl) && isBilibiliMedia(details.url)) {
+    return
   }
 
   await upsertDrafts(details.tabId, [draft], pageTitle, pageUrl)
@@ -297,10 +313,17 @@ async function handleMessage(
       await applyHlsProgress(message.payload as HlsProgressUpdate)
       return { ok: true }
     }
+    case MessageType.FETCH_PROGRESS: {
+      await applyFetchProgress(message.payload as FetchProgressUpdate)
+      return { ok: true }
+    }
+    case MessageType.SAVE_BLOB:
+      return handleSaveBlob(message.payload as SaveBlobPayload | undefined)
     case MessageType.HLS_START:
     case MessageType.HLS_PAUSE:
     case MessageType.HLS_ABORT:
     case MessageType.HLS_LIVE_START:
+    case MessageType.FETCH_SAVE:
     case MessageType.PAGE_MEDIA:
       return { ok: true }
     default:
@@ -310,13 +333,16 @@ async function handleMessage(
 
 void ensureDefaultSettings()
 registerDownloadListeners()
+void ensureBiliReferrerRules()
 
 chrome.runtime.onInstalled.addListener(() => {
   void ensureDefaultSettings()
+  void ensureBiliReferrerRules()
 })
 
 chrome.runtime.onStartup.addListener(() => {
   void ensureDefaultSettings()
+  void ensureBiliReferrerRules()
 })
 
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {

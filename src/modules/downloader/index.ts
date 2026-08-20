@@ -10,4 +10,7 @@ export {
 export { controlDownload } from './control'
 export { downloadStatusLabel, formatDownloadProgress } from './format'
 export { applyHlsProgress } from './hlsProgress'
+export { applyFetchProgress } from './fetchProgress'
 export { parseStream } from './parseStream'
+export { handleSaveBlob, saveObjectUrl } from './saveBlob'
+export { ensureBiliReferrerRules } from './biliRules'

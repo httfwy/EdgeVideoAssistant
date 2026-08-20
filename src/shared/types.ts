@@ -62,6 +62,7 @@ export interface VideoResource {
   tracks?: StreamTrack[]
   parsed?: boolean
   detectedAt: number
+  backupUrls?: string[]
 }
 
 /** 下载任务 */

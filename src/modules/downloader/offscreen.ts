@@ -1,4 +1,4 @@
-import { MessageType } from '../../shared/messages'
+import { MessageType, type FetchSavePayload } from '../../shared/messages'
 
 const OFFSCREEN_URL = 'src/offscreen/index.html'
 
@@ -23,7 +23,7 @@ export async function ensureOffscreenDocument(): Promise<void> {
         chrome.offscreen.Reason.USER_MEDIA,
         chrome.offscreen.Reason.DISPLAY_MEDIA,
       ],
-      justification: 'HLS 分片合并与页面录制',
+      justification: 'HLS 分片合并、音视频封装与页面录制',
     })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
@@ -36,11 +36,12 @@ export async function ensureOffscreenDocument(): Promise<void> {
 
 export async function sendToOffscreen(type: string, payload: unknown): Promise<void> {
   await ensureOffscreenDocument()
+  const message = { type, payload, target: 'offscreen' as const }
   try {
-    await chrome.runtime.sendMessage({ type, payload })
+    await chrome.runtime.sendMessage(message)
   } catch {
     await ensureOffscreenDocument()
-    await chrome.runtime.sendMessage({ type, payload })
+    await chrome.runtime.sendMessage(message)
   }
 }
 
@@ -51,4 +52,8 @@ export async function startOffscreenHls(payload: {
   startIndex: number
 }): Promise<void> {
   await sendToOffscreen(MessageType.HLS_START, payload)
+}
+
+export async function startOffscreenFetch(payload: FetchSavePayload): Promise<void> {
+  await sendToOffscreen(MessageType.FETCH_SAVE, payload)
 }
